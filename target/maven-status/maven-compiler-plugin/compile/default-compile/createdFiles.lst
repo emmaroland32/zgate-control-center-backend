@@ -34,6 +34,7 @@ com/zgate/nexus/domain/AuditLog$AuditLogBuilder.class
 com/zgate/nexus/service/InfrastructureService$ContainerInfo.class
 com/zgate/nexus/controller/DeploymentController.class
 com/zgate/nexus/controller/IntegrationController$CreateApiKeyRequest.class
+com/zgate/nexus/service/NexusConfigService$1.class
 com/zgate/nexus/domain/IntegrationConfig$IntegrationConfigBuilder.class
 com/zgate/nexus/service/ReportService.class
 com/zgate/nexus/repository/NexusConfigRepository.class

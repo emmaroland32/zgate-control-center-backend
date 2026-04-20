@@ -173,7 +173,7 @@ public class BillingService {
               <tr><td><b>Total Due</b></td><td><b>%s %s</b></td></tr>
             </table>
             <p>Due date: %s</p>
-            <p>ZGATE Nexus Control Center</p>
+            <p>ZGATE Control Center</p>
             </body></html>
             """.formatted(
                 inv.getInvoiceNumber(), org.getName(),

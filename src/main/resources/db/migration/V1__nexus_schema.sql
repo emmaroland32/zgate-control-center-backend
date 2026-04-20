@@ -1,6 +1,9 @@
 -- ZGATE Nexus Control Center — Standalone Database Schema
 -- Database: zgate_nexus (separate PostgreSQL database)
 
+-- Enable pgcrypto for gen_random_uuid() on PostgreSQL < 13
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ============================================================
 -- USERS (ZGATE internal staff only)
 -- ============================================================

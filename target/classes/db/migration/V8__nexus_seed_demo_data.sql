@@ -54,7 +54,7 @@ VALUES
   ('dde5f0d1-75d6-48c0-8f3e-29852ae26f13', 'Demo Financial Services', 'demo-fs-v8',
    'admin@demo-fs.com', 'Demo Admin', 'ZA', 'ENTERPRISE',
    'HEALTHY', 'PRODUCTION', '2.4.5', 10, NULL)
-ON CONFLICT (slug) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
 -- RELEASES

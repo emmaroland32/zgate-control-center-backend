@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public interface LicenseRepository extends JpaRepository<License, UUID> {
     List<License> findByOrganizationId(UUID orgId);
-    Optional<License> findByOrganizationIdAndModuleName(UUID orgId, String moduleName);
+    Optional<License> findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(UUID orgId, String moduleName);
     long countByStatus(License.Status status);
 
     @Query("SELECT l FROM License l WHERE l.status = 'ACTIVE' AND l.expiresAt IS NOT NULL AND l.expiresAt <= :cutoff")

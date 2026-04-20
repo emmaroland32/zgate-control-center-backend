@@ -39,7 +39,7 @@ public class LicenseService {
     @Transactional
     public License issue(IssueLicenseRequest req, String issuedBy) {
         // Deactivate existing if present
-        repo.findByOrganizationIdAndModuleName(req.getOrganizationId(), req.getModuleName())
+        repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(req.getOrganizationId(), req.getModuleName())
             .ifPresent(existing -> {
                 existing.setStatus(License.Status.SUSPENDED);
                 repo.save(existing);
@@ -88,7 +88,7 @@ public class LicenseService {
         List<License> issued = new java.util.ArrayList<>();
         for (String moduleName : req.moduleNames()) {
             // Suspend any existing active license for this module
-            repo.findByOrganizationIdAndModuleName(req.organizationId(), moduleName)
+            repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(req.organizationId(), moduleName)
                 .ifPresent(existing -> {
                     existing.setStatus(License.Status.SUSPENDED);
                     repo.save(existing);
@@ -163,7 +163,7 @@ public class LicenseService {
     @Transactional
     public License activateJson(UUID orgId, String moduleName, String licenseJson, String activatedBy) {
         String fileHash = sha256Hex(licenseJson);
-        License license = repo.findByOrganizationIdAndModuleName(orgId, moduleName)
+        License license = repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(orgId, moduleName)
             .orElseThrow(() -> new NexusException(
                 "No license found for org " + orgId + " / module " + moduleName));
         license.setLicenseFileHash(fileHash);
@@ -179,7 +179,7 @@ public class LicenseService {
     @Transactional
     public License activateFile(UUID orgId, String moduleName, byte[] fileBytes, String activatedBy) {
         String fileHash = sha256HexBytes(fileBytes);
-        License license = repo.findByOrganizationIdAndModuleName(orgId, moduleName)
+        License license = repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(orgId, moduleName)
             .orElseThrow(() -> new NexusException(
                 "No license found for org " + orgId + " / module " + moduleName));
         license.setLicenseFileHash(fileHash);
@@ -260,7 +260,7 @@ public class LicenseService {
      */
     @Transactional
     public void reportActivation(UUID orgId, String moduleName, boolean success, String orgModulesJson) {
-        repo.findByOrganizationIdAndModuleName(orgId, moduleName).ifPresent(license -> {
+        repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(orgId, moduleName).ifPresent(license -> {
             license.setDeliveryStatus(success
                 ? License.DeliveryStatus.ACTIVATED
                 : License.DeliveryStatus.FAILED);
