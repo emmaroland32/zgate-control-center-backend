@@ -1,0 +1,19 @@
+# Secrets — never bake into the image
+.env
+.env.*
+
+# The RSA license-signing key is mounted as a read-only volume at runtime,
+# never copied into the image.
+license/
+
+# Build artifacts
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.log
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

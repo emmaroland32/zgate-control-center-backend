@@ -9,10 +9,10 @@
         <relativePath/>
     </parent>
     <groupId>com.zgate</groupId>
-    <artifactId>nexus-backend</artifactId>
+    <artifactId>control-center-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>zgate-nexus</name>
-    <description>ZGATE Nexus Control Center Backend</description>
+    <name>zgate-control-center</name>
+    <description>ZGATE Control Center Backend</description>
 
     <properties>
         <java.version>25</java.version>
