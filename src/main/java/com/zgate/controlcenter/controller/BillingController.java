@@ -1,6 +1,8 @@
 package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.domain.Invoice;
+import com.zgate.controlcenter.domain.InvoiceLineItem;
+import com.zgate.controlcenter.repository.InvoiceLineItemRepository;
 import com.zgate.controlcenter.repository.InvoiceRepository;
 import com.zgate.controlcenter.service.BillingService;
 import lombok.Data;
@@ -23,6 +25,7 @@ public class BillingController {
 
     private final BillingService billingService;
     private final InvoiceRepository invoiceRepo;
+    private final InvoiceLineItemRepository lineItemRepo;
 
     @GetMapping("/dashboard/{orgId}")
     public ResponseEntity<?> dashboard(@PathVariable UUID orgId) {
@@ -37,6 +40,12 @@ public class BillingController {
     @GetMapping("/invoices/{orgId}")
     public ResponseEntity<List<Invoice>> findByOrg(@PathVariable UUID orgId) {
         return ResponseEntity.ok(invoiceRepo.findByOrganizationIdOrderByCreatedAtDesc(orgId));
+    }
+
+    /** Line items for an invoice (the detail modal reads these; previously there was no read endpoint). */
+    @GetMapping("/invoices/{invoiceId}/line-items")
+    public ResponseEntity<List<InvoiceLineItem>> lineItems(@PathVariable UUID invoiceId) {
+        return ResponseEntity.ok(lineItemRepo.findByInvoiceId(invoiceId));
     }
 
     @PostMapping("/invoices/generate")

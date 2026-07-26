@@ -38,6 +38,12 @@ public class AlertController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Enable/disable a rule without wiping its other columns (the PUT path required a full body). */
+    @PatchMapping("/rules/{id}/toggle")
+    public ResponseEntity<AlertRule> toggleRule(@PathVariable UUID id) {
+        return ResponseEntity.ok(service.toggleRule(id));
+    }
+
     @GetMapping("/active")
     public ResponseEntity<List<Alert>> active() { return ResponseEntity.ok(service.findActive()); }
 

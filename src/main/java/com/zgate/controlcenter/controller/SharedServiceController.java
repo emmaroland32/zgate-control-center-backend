@@ -32,12 +32,14 @@ public class SharedServiceController {
     }
 
     @PostMapping
-    public ResponseEntity<SharedService> create(@RequestBody SharedService service) {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+        public ResponseEntity<SharedService> create(@RequestBody SharedService service) {
         return ResponseEntity.ok(manager.create(service));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<SharedService> update(@PathVariable UUID id, @RequestBody SharedService service) {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+        public ResponseEntity<SharedService> update(@PathVariable UUID id, @RequestBody SharedService service) {
         return ResponseEntity.ok(manager.update(id, service));
     }
 
@@ -54,13 +56,15 @@ public class SharedServiceController {
     }
 
     @PostMapping("/subscriptions/{orgId}/enable")
-    public ResponseEntity<OrgServiceSubscription> enable(@PathVariable UUID orgId,
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+        public ResponseEntity<OrgServiceSubscription> enable(@PathVariable UUID orgId,
                                                           @RequestBody EnableRequest req) {
         return ResponseEntity.ok(manager.enableForOrg(orgId, req.getServiceId(), req.getCallLimit(), req.getEnabledBy()));
     }
 
     @PostMapping("/subscriptions/{orgId}/disable")
-    public ResponseEntity<Void> disable(@PathVariable UUID orgId, @RequestParam UUID serviceId) {
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+        public ResponseEntity<Void> disable(@PathVariable UUID orgId, @RequestParam UUID serviceId) {
         manager.disableForOrg(orgId, serviceId);
         return ResponseEntity.ok().build();
     }

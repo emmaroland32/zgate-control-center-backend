@@ -40,6 +40,13 @@ public class AlertService {
 
     public void deleteRule(UUID id) { ruleRepo.deleteById(id); }
 
+    /** Flip a rule's enabled flag without touching (and wiping) its other required columns. */
+    public AlertRule toggleRule(UUID id) {
+        AlertRule rule = ruleRepo.findById(id).orElseThrow(() -> new ControlCenterException("Rule not found"));
+        rule.setEnabled(!rule.isEnabled());
+        return ruleRepo.save(rule);
+    }
+
     public Alert fire(UUID ruleId, UUID orgId, Double value, String title, String message) {
         return alertRepo.save(Alert.builder()
             .ruleId(ruleId)
