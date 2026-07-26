@@ -29,18 +29,18 @@ public class TelemetryService {
      * network overhead. Also updates org.lastSeenAt as a heartbeat side-effect.
      */
     public List<TelemetryEvent> ingest(UUID orgId, List<TelemetryEvent> events) {
-        return ingest(orgId, events, null, null, null, null, null, null);
+        return ingest(orgId, events, null, null, null, null, null, null, null);
     }
 
     public List<TelemetryEvent> ingest(UUID orgId, List<TelemetryEvent> events,
                                        String reportedFingerprint, String nodeId, String platform) {
-        return ingest(orgId, events, reportedFingerprint, nodeId, platform, null, null, null);
+        return ingest(orgId, events, reportedFingerprint, nodeId, platform, null, null, null, null);
     }
 
     @Transactional
     public List<TelemetryEvent> ingest(UUID orgId, List<TelemetryEvent> events,
                                        String reportedFingerprint, String nodeId, String platform,
-                                       Integer memUsedMb, Integer memMaxMb, Long uptimeSeconds) {
+                                       Integer memUsedMb, Integer memMaxMb, Long uptimeSeconds, Integer cpuPct) {
         var org = orgRepo.findById(orgId)
             .orElseThrow(() -> new ControlCenterException("Organization not found: " + orgId));
 
@@ -58,7 +58,7 @@ public class TelemetryService {
         // Commercial-enforcement radar: flag over-version / running-while-unentitled. Best-effort —
         // a detection failure must never reject the org's telemetry.
         try {
-            anomalyDetection.inspect(org, events, reportedFingerprint, nodeId, platform, memUsedMb, memMaxMb, uptimeSeconds);
+            anomalyDetection.inspect(org, events, reportedFingerprint, nodeId, platform, memUsedMb, memMaxMb, uptimeSeconds, cpuPct);
         } catch (Exception ex) {
             log.warn("Anomaly detection failed for org {}: {}", orgId, ex.getMessage());
         }

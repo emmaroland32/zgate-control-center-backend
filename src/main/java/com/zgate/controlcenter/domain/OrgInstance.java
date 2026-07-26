@@ -43,6 +43,7 @@ public class OrgInstance {
     private Integer memUsedMb;
     private Integer memMaxMb;
     private Long uptimeSeconds;
+    private Integer cpuPct;
 
     @Column(nullable = false)
     private LocalDateTime firstSeenAt;

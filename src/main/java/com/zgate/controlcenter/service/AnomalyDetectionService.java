@@ -76,7 +76,7 @@ public class AnomalyDetectionService {
     /** @see #inspect — no runtime metrics. */
     public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events,
                                         String reportedFingerprint, String nodeId, String platform) {
-        return inspect(org, events, reportedFingerprint, nodeId, platform, null, null, null);
+        return inspect(org, events, reportedFingerprint, nodeId, platform, null, null, null, null);
     }
 
     /**
@@ -89,7 +89,7 @@ public class AnomalyDetectionService {
      */
     public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events,
                                         String reportedFingerprint, String nodeId, String platform,
-                                        Integer memUsedMb, Integer memMaxMb, Long uptimeSeconds) {
+                                        Integer memUsedMb, Integer memMaxMb, Long uptimeSeconds, Integer cpuPct) {
         if (!enabled || org == null) return List.of();
 
         LocalDateTime now = LocalDateTime.now();
@@ -132,7 +132,7 @@ public class AnomalyDetectionService {
             // (an older/single-node instance) so it still counts as exactly one node.
             String node = (nodeId != null && !nodeId.isBlank()) ? nodeId : reportedFingerprint;
             recordInstance(org.getId(), reportedFingerprint, node, platform, reportedVersion,
-                memUsedMb, memMaxMb, uptimeSeconds, now);
+                memUsedMb, memMaxMb, uptimeSeconds, cpuPct, now);
 
             LocalDateTime since = now.minusHours(Math.max(1, instanceWindowHours));
 
@@ -185,7 +185,7 @@ public class AnomalyDetectionService {
     /** Upsert the reporting node into the registry, refreshing its last-seen timestamp + metrics. */
     private void recordInstance(java.util.UUID orgId, String fingerprint, String nodeId, String platform,
                                 String appVersion, Integer memUsedMb, Integer memMaxMb, Long uptimeSeconds,
-                                LocalDateTime now) {
+                                Integer cpuPct, LocalDateTime now) {
         OrgInstance inst = instanceRepo.findByOrganizationIdAndFingerprintAndNodeId(orgId, fingerprint, nodeId)
             .orElseGet(() -> OrgInstance.builder()
                 .organizationId(orgId).fingerprint(fingerprint).nodeId(nodeId).firstSeenAt(now).build());
@@ -195,6 +195,7 @@ public class AnomalyDetectionService {
         if (memUsedMb != null) inst.setMemUsedMb(memUsedMb);
         if (memMaxMb != null) inst.setMemMaxMb(memMaxMb);
         if (uptimeSeconds != null) inst.setUptimeSeconds(uptimeSeconds);
+        if (cpuPct != null) inst.setCpuPct(cpuPct);
         instanceRepo.save(inst);
     }
 

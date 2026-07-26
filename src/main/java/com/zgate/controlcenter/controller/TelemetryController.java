@@ -43,8 +43,9 @@ public class TelemetryController {
             @RequestHeader(value = "X-Control-Center-Mem-Used-Mb", required = false) Integer memUsedMb,
             @RequestHeader(value = "X-Control-Center-Mem-Max-Mb", required = false) Integer memMaxMb,
             @RequestHeader(value = "X-Control-Center-Uptime-Sec", required = false) Long uptimeSeconds,
+            @RequestHeader(value = "X-Control-Center-Cpu-Pct", required = false) Integer cpuPct,
             @RequestBody List<TelemetryEvent> events) {
-        service.ingest(orgId, events, fingerprint, nodeId, platform, memUsedMb, memMaxMb, uptimeSeconds);
+        service.ingest(orgId, events, fingerprint, nodeId, platform, memUsedMb, memMaxMb, uptimeSeconds, cpuPct);
         return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 
