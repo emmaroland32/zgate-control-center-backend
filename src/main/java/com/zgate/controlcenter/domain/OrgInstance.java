@@ -39,6 +39,11 @@ public class OrgInstance {
 
     private String appVersion;
 
+    /** Real runtime metrics reported on the heartbeat (JVM heap MB + process uptime seconds). */
+    private Integer memUsedMb;
+    private Integer memMaxMb;
+    private Long uptimeSeconds;
+
     @Column(nullable = false)
     private LocalDateTime firstSeenAt;
 
