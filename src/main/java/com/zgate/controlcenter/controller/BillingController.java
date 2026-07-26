@@ -37,6 +37,12 @@ public class BillingController {
         return ResponseEntity.ok(invoiceRepo.findAll());
     }
 
+    /** Real per-org billing accounts (replaces the previously-fabricated Accounts tab). */
+    @GetMapping("/accounts")
+    public ResponseEntity<List<BillingService.BillingAccount>> accounts() {
+        return ResponseEntity.ok(billingService.getAllAccounts());
+    }
+
     @GetMapping("/invoices/{orgId}")
     public ResponseEntity<List<Invoice>> findByOrg(@PathVariable UUID orgId) {
         return ResponseEntity.ok(invoiceRepo.findByOrganizationIdOrderByCreatedAtDesc(orgId));

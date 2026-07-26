@@ -140,6 +140,28 @@ public class BillingService {
         return invoiceRepo.save(invoice);
     }
 
+    /** Real per-org billing accounts (email/country from the org; cost + outstanding computed). */
+    public java.util.List<BillingAccount> getAllAccounts() {
+        LocalDate monthStart = LocalDate.now().withDayOfMonth(1);
+        LocalDate today = LocalDate.now();
+        java.util.List<BillingAccount> out = new java.util.ArrayList<>();
+        for (Organization org : orgRepo.findAll()) {
+            BigDecimal cost = usageRepo.sumCostByOrgAndPeriod(org.getId(), monthStart, today);
+            if (cost == null) cost = BigDecimal.ZERO;
+            BigDecimal outstanding = invoiceRepo.findByOrganizationIdOrderByCreatedAtDesc(org.getId()).stream()
+                .filter(i -> i.getStatus() == Invoice.Status.SENT || i.getStatus() == Invoice.Status.OVERDUE)
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            out.add(new BillingAccount(org.getId(), org.getName(), org.getContactEmail(), org.getCountry(),
+                cost, outstanding));
+        }
+        return out;
+    }
+
+    public record BillingAccount(UUID organizationId, String organizationName, String billingEmail,
+                                 String country, BigDecimal currentMonthEstimateUsd,
+                                 BigDecimal outstandingBalanceUsd) {}
+
     public BillingDashboard getDashboard(UUID orgId) {
         LocalDate monthStart = LocalDate.now().withDayOfMonth(1);
         BigDecimal currentMonthCost = usageRepo.sumCostByOrgAndPeriod(orgId, monthStart, LocalDate.now());
