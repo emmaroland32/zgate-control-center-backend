@@ -43,8 +43,15 @@ public class Organization {
 
     private String deployedVersion;
 
-    /** Machine-to-machine API key hash — used by the ZGATE instance to call back to ControlCenter */
+    /** Machine-to-machine API key hash (SHA-256) — used to authenticate the ZGATE instance's callbacks. */
     private String serviceApiKeyHash;
+
+    /**
+     * The raw service API key, surfaced ONCE in the create / regenerate response so the operator can
+     * configure it on the install. Never persisted (only the hash is) and null on every other read.
+     */
+    @Transient
+    private String serviceApiKey;
 
     private UUID partnerId;
     private Integer activeUsers;

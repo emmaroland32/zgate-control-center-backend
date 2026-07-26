@@ -83,4 +83,19 @@ public class OrganizationController {
             com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
         return ResponseEntity.ok(org);
     }
+
+    /**
+     * Rotate the org's machine-to-machine service API key. The raw key is returned ONCE (in
+     * {@code serviceApiKey}); configure it on the install as CONTROLCENTER_SERVICE_KEY. Admin-only,
+     * audited; the raw key itself is never logged.
+     */
+    @PostMapping("/{id}/regenerate-key")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    public ResponseEntity<Organization> regenerateKey(@PathVariable UUID id,
+                                                      @AuthenticationPrincipal UserDetails user) {
+        Organization org = service.regenerateServiceKey(id);
+        audit.log(user.getUsername(), user.getUsername(), "ORG_SERVICE_KEY_REGENERATED", "Organization",
+            id.toString(), id, null, null, com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
+        return ResponseEntity.ok(org);
+    }
 }

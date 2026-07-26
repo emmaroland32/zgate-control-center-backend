@@ -26,6 +26,7 @@ public class SecurityConfig {
 
     private final UserDetailsServiceImpl userDetailsService;
     private final JwtAuthFilter jwtAuthFilter;
+    private final com.zgate.controlcenter.security.ServiceKeyAuthFilter serviceKeyAuthFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -62,7 +63,9 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            // M2M service-key auth for org-facing endpoints (no-op unless controlcenter.serviceKey.enforce=true)
+            .addFilterBefore(serviceKeyAuthFilter, JwtAuthFilter.class);
         return http.build();
     }
 }

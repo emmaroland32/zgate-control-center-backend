@@ -42,9 +42,9 @@ public class OrganizationService {
         if (orgRepo.findBySlug(req.getSlug()).isPresent()) {
             throw new ControlCenterException("Slug already in use: " + req.getSlug());
         }
-        // Generate service API key for machine-to-machine calls
+        // Generate the machine-to-machine service API key (used by the install to authenticate its
+        // callbacks). We store only the SHA-256 hash and reveal the raw key once in this response.
         String rawApiKey = generateApiKey();
-        String keyHash = org.springframework.util.DigestUtils.md5DigestAsHex(rawApiKey.getBytes());
 
         Organization org = Organization.builder()
             .name(req.getName())
@@ -58,9 +58,46 @@ public class OrganizationService {
             .deploymentEnv(req.getDeploymentEnv())
             .backendUrl(req.getBackendUrl())
             .partnerId(req.getPartnerId())
-            .serviceApiKeyHash(keyHash)
+            .serviceApiKeyHash(sha256Hex(rawApiKey))
             .build();
-        return orgRepo.save(org);
+        Organization saved = orgRepo.save(org);
+        saved.setServiceApiKey(rawApiKey); // surfaced once (transient — never persisted)
+        return saved;
+    }
+
+    /** Rotate the org's service API key, returning the new raw key once (only the hash is stored). */
+    @CacheEvict(value = "organizations", allEntries = true)
+    public Organization regenerateServiceKey(UUID id) {
+        Organization org = findById(id);
+        String rawApiKey = generateApiKey();
+        org.setServiceApiKeyHash(sha256Hex(rawApiKey));
+        Organization saved = orgRepo.save(org);
+        saved.setServiceApiKey(rawApiKey);
+        return saved;
+    }
+
+    /** Verify a presented service API key against the org's stored hash (constant-time). */
+    public boolean serviceKeyValid(UUID orgId, String presentedKey) {
+        if (presentedKey == null || presentedKey.isBlank()) return false;
+        return orgRepo.findById(orgId)
+            .map(Organization::getServiceApiKeyHash)
+            .filter(hash -> hash != null && !hash.isBlank())
+            .map(hash -> java.security.MessageDigest.isEqual(
+                hash.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                sha256Hex(presentedKey).getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+            .orElse(false);
+    }
+
+    private static String sha256Hex(String input) {
+        try {
+            byte[] h = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(h.length * 2);
+            for (byte b : h) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new ControlCenterException("SHA-256 unavailable", e);
+        }
     }
 
     @CacheEvict(value = "organizations", allEntries = true)
