@@ -37,8 +37,9 @@ public class TelemetryController {
     @PostMapping("/ingest")
     public ResponseEntity<Void> ingest(
             @RequestHeader("X-Control-Center-Org-Id") UUID orgId,
+            @RequestHeader(value = "X-Control-Center-Fingerprint", required = false) String fingerprint,
             @RequestBody List<TelemetryEvent> events) {
-        service.ingest(orgId, events);
+        service.ingest(orgId, events, fingerprint);
         return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 

@@ -1,6 +1,7 @@
 package com.zgate.controlcenter.service;
 
 import com.zgate.controlcenter.domain.License;
+import com.zgate.controlcenter.domain.Organization;
 import com.zgate.controlcenter.exception.ControlCenterException;
 import com.zgate.controlcenter.payload.request.IssueLicenseRequest;
 import com.zgate.controlcenter.repository.LicenseRepository;
@@ -36,8 +37,14 @@ public class LicenseService {
         return repo.findByOrganizationId(orgId);
     }
 
+    /** Default lifetime of an issued/renewed license when the org has not set its own TTL. */
+    static final int DEFAULT_LICENSE_TTL_DAYS = 30;
+
     @Transactional
     public License issue(IssueLicenseRequest req, String issuedBy) {
+        var org = orgRepo.findById(req.getOrganizationId())
+            .orElseThrow(() -> new ControlCenterException("Organization not found: " + req.getOrganizationId()));
+
         // Deactivate existing if present
         repo.findFirstByOrganizationIdAndModuleNameOrderByActivatedAtDesc(req.getOrganizationId(), req.getModuleName())
             .ifPresent(existing -> {
@@ -45,14 +52,25 @@ public class LicenseService {
                 repo.save(existing);
             });
 
+        // Short-lived by default: absent an explicit expiry, licenses live for the org's TTL and are
+        // kept alive only by the renewal job (which enforces the subscription). maxVersion defaults to
+        // what the org has paid for, so a manual issue still can't over-entitle a customer by omission.
+        LocalDateTime expiresAt = req.getExpiresAt() != null
+            ? req.getExpiresAt()
+            : LocalDateTime.now().plusDays(ttlDays(org));
+        String maxVersion = req.getMaxVersion() != null ? req.getMaxVersion() : org.getEntitledVersion();
+
         License license = repo.save(License.builder()
             .organizationId(req.getOrganizationId())
             .moduleName(req.getModuleName())
             .status(License.Status.ACTIVE)
-            .expiresAt(req.getExpiresAt())
+            .expiresAt(expiresAt)
             .maxUsers(req.getMaxUsers())
             .features(req.getFeatures())
             .fingerprint(req.getFingerprint())
+            .maxVersion(maxVersion)
+            .imageDigest(req.getImageDigest())
+            .graceDays(req.getGraceDays())
             .activatedAt(LocalDateTime.now())
             .issuedBy(issuedBy)
             .build());
@@ -60,10 +78,7 @@ public class LicenseService {
         // Pre-generate signed bundle if key is available
         if (signingService.isSigningAvailable()) {
             try {
-                String orgName = orgRepo.findById(req.getOrganizationId())
-                    .map(o -> o.getName())
-                    .orElse(null);
-                String bundle = signingService.generateSignedBundle(license, orgName);
+                String bundle = signingService.generateSignedBundle(license, org.getName());
                 license.setBundleJson(bundle);
                 license.setDeliveryStatus(License.DeliveryStatus.PENDING);
                 license = repo.save(license);
@@ -75,15 +90,83 @@ public class LicenseService {
         return license;
     }
 
+    /** The org's configured license lifetime in days, or the default when unset. */
+    static int ttlDays(Organization org) {
+        Integer ttl = org.getLicenseTtlDays();
+        return (ttl != null && ttl > 0) ? ttl : DEFAULT_LICENSE_TTL_DAYS;
+    }
+
+    public enum RenewalOutcome { RENEWED, SKIPPED_NOT_ENTITLED, SKIPPED_NOT_DUE, SKIPPED_LICENSE_GONE }
+
+    /**
+     * The non-payment kill switch. Extends a short-lived license (so the org's hourly poll keeps it
+     * alive) ONLY while the org's subscription is valid; a lapsed subscription is left to expire, after
+     * which the org-side grace window ends and the deployment locks.
+     *
+     * <p>The renewed expiry is capped at {@code subscriptionValidUntil}, so a license can never outlive
+     * what the customer has paid for — when they renew payment, the next run extends it again.
+     */
+    @Transactional
+    public RenewalOutcome renewIfEntitled(UUID licenseId) {
+        License l = repo.findById(licenseId).orElse(null);
+        if (l == null || l.getStatus() != License.Status.ACTIVE) return RenewalOutcome.SKIPPED_LICENSE_GONE;
+
+        Organization org = orgRepo.findById(l.getOrganizationId()).orElse(null);
+        if (org == null) return RenewalOutcome.SKIPPED_LICENSE_GONE;
+
+        LocalDateTime now = LocalDateTime.now();
+        if (!isEntitled(org, now)) {
+            log.warn("License renewal REFUSED for org {} (subscription lapsed at {}) — license {} left to expire.",
+                org.getId(), org.getSubscriptionValidUntil(), licenseId);
+            return RenewalOutcome.SKIPPED_NOT_ENTITLED;
+        }
+
+        LocalDateTime newExpiry = renewalExpiry(org, now);
+        if (l.getExpiresAt() != null && !newExpiry.isAfter(l.getExpiresAt())) {
+            // Subscription doesn't extend the current coverage (already covers the paid-through date).
+            return RenewalOutcome.SKIPPED_NOT_DUE;
+        }
+
+        l.setExpiresAt(newExpiry);
+        if (org.getEntitledVersion() != null && !org.getEntitledVersion().isBlank()) {
+            l.setMaxVersion(org.getEntitledVersion()); // pick up any version-entitlement change
+        }
+        // Regenerate the signed bundle so the org picks up the extended expiry on its next poll.
+        if (signingService.isSigningAvailable()) {
+            l.setBundleJson(signingService.generateSignedBundle(l, org.getName()));
+            l.setDeliveryStatus(License.DeliveryStatus.PENDING);
+        }
+        repo.save(l);
+        log.info("Renewed license {} (org {}) to {}", licenseId, org.getId(), newExpiry);
+        return RenewalOutcome.RENEWED;
+    }
+
+    /** An org is entitled while its subscription is unset (perpetual/unmanaged) or still valid. */
+    static boolean isEntitled(Organization org, LocalDateTime now) {
+        LocalDateTime until = org.getSubscriptionValidUntil();
+        return until == null || until.isAfter(now);
+    }
+
+    /** now + TTL, but never past the paid-through date, so a license can't outlive the subscription. */
+    static LocalDateTime renewalExpiry(Organization org, LocalDateTime now) {
+        LocalDateTime ttlExpiry = now.plusDays(ttlDays(org));
+        LocalDateTime until = org.getSubscriptionValidUntil();
+        return (until != null && until.isBefore(ttlExpiry)) ? until : ttlExpiry;
+    }
+
     /**
      * Issue licenses for multiple modules in one transaction and return a single
      * combined signed bundle covering all of them.
      */
     @Transactional
     public LicenseBundle issueBulk(IssueBulkRequest req, String issuedBy) {
-        String orgName = orgRepo.findById(req.organizationId())
-            .map(o -> o.getName())
+        Organization org = orgRepo.findById(req.organizationId())
             .orElseThrow(() -> new ControlCenterException("Organization not found: " + req.organizationId()));
+
+        LocalDateTime expiresAt = req.expiresAt() != null
+            ? req.expiresAt()
+            : LocalDateTime.now().plusDays(ttlDays(org));
+        String maxVersion = req.maxVersion() != null ? req.maxVersion() : org.getEntitledVersion();
 
         List<License> issued = new java.util.ArrayList<>();
         for (String moduleName : req.moduleNames()) {
@@ -98,10 +181,13 @@ public class LicenseService {
                 .organizationId(req.organizationId())
                 .moduleName(moduleName)
                 .status(License.Status.ACTIVE)
-                .expiresAt(req.expiresAt())
+                .expiresAt(expiresAt)
                 .maxUsers(req.maxUsers())
                 .features(req.features())
                 .fingerprint(req.fingerprint())
+                .maxVersion(maxVersion)
+                .imageDigest(req.imageDigest())
+                .graceDays(req.graceDays())
                 .activatedAt(LocalDateTime.now())
                 .issuedBy(issuedBy)
                 .build());
@@ -109,7 +195,7 @@ public class LicenseService {
         }
 
         // Generate one combined bundle for all modules
-        String bundleJson = signingService.generateSignedBundleForModules(issued, orgName);
+        String bundleJson = signingService.generateSignedBundleForModules(issued, org.getName());
         String integrity = sha256Hex(bundleJson);
 
         // Persist bundle on each issued license row
@@ -313,7 +399,10 @@ public class LicenseService {
         java.time.LocalDateTime expiresAt,
         Integer maxUsers,
         String features,
-        String fingerprint
+        String fingerprint,
+        String maxVersion,
+        String imageDigest,
+        Integer graceDays
     ) {}
     public record LicenseStats(long active, long expired, long suspended, long expiringSoon) {}
     public record FingerprintResult(UUID orgId, String moduleName, String fingerprint) {}

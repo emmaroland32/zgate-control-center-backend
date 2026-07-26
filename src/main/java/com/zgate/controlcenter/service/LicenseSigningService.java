@@ -84,6 +84,7 @@ public class LicenseSigningService {
             payload.put("fingerprint", license.getFingerprint()); // may be null = unbound
             payload.put("maxUsers", license.getMaxUsers() != null ? license.getMaxUsers() : 9999);
             payload.put("features", license.getFeatures() != null ? license.getFeatures() : "all");
+            addEntitlementFields(payload, license);
 
             // Single-module bundle — one License row per module in ControlCenter
             payload.put("modules", List.of(buildModuleEntry(license)));
@@ -139,6 +140,7 @@ public class LicenseSigningService {
             payload.put("fingerprint", primary.getFingerprint());
             payload.put("maxUsers", primary.getMaxUsers() != null ? primary.getMaxUsers() : 9999);
             payload.put("features", primary.getFeatures() != null ? primary.getFeatures() : "all");
+            addEntitlementFields(payload, primary);
 
             payload.put("modules", licenses.stream()
                 .map(this::buildModuleEntry)
@@ -164,6 +166,23 @@ public class LicenseSigningService {
             throw e;
         } catch (Exception e) {
             throw new ControlCenterException("Failed to generate signed license bundle: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Add the commercial-enforcement fields to the bundle payload, only when set — an unset field
+     * is omitted so the org-side gate treats it as "not pinned" (backward compatible with licenses
+     * issued before these existed).
+     */
+    private void addEntitlementFields(Map<String, Object> payload, License license) {
+        if (license.getMaxVersion() != null && !license.getMaxVersion().isBlank()) {
+            payload.put("maxVersion", license.getMaxVersion());
+        }
+        if (license.getImageDigest() != null && !license.getImageDigest().isBlank()) {
+            payload.put("imageDigest", license.getImageDigest());
+        }
+        if (license.getGraceDays() != null) {
+            payload.put("graceDays", license.getGraceDays());
         }
     }
 

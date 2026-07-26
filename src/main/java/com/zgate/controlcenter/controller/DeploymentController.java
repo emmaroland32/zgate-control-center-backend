@@ -3,10 +3,13 @@ package com.zgate.controlcenter.controller;
 import com.zgate.controlcenter.domain.Deployment;
 import com.zgate.controlcenter.payload.request.PushUpdateRequest;
 import com.zgate.controlcenter.service.DeploymentService;
+import com.zgate.controlcenter.service.ImagePullTokenService;
+import com.zgate.controlcenter.service.ImagePullTokenService.PullAuthorization;
 import jakarta.validation.Valid;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -22,6 +25,7 @@ import java.util.UUID;
 public class DeploymentController {
 
     private final DeploymentService service;
+    private final ImagePullTokenService pullTokenService;
 
     @GetMapping
     public ResponseEntity<List<Deployment>> findAll() {
@@ -58,6 +62,27 @@ public class DeploymentController {
     public ResponseEntity<Deployment> rollback(@PathVariable UUID id,
                                                 @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.rollback(id, user.getUsername()));
+    }
+
+    /**
+     * Org-facing (authenticated by the X-Control-Center-Org-Id header, like the bundle/telemetry
+     * endpoints): the update-agent asks whether — and how — it may pull a release image. CC authorizes
+     * only when the org's subscription is valid and the release is within its entitlement, returning
+     * the entitled image ref and (if configured) a short-lived pull credential. A denial is 402 so the
+     * agent can distinguish "not entitled" from a transport error.
+     */
+    @PostMapping("/pull-token")
+    public ResponseEntity<PullAuthorization> pullToken(
+            @RequestHeader("X-Control-Center-Org-Id") UUID orgId,
+            @RequestBody(required = false) PullTokenRequest body) {
+        PullAuthorization auth = pullTokenService.authorize(orgId, body != null ? body.getVersion() : null);
+        return auth.authorized()
+            ? ResponseEntity.ok(auth)
+            : ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(auth);
+    }
+
+    @Data static class PullTokenRequest {
+        private String version; // optional; null → latest entitled release
     }
 
     @Data static class StatusUpdate {

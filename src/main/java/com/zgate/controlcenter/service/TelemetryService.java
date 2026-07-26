@@ -17,18 +17,24 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class TelemetryService {
 
     private final TelemetryEventRepository repo;
     private final OrganizationRepository orgRepo;
+    private final AnomalyDetectionService anomalyDetection;
 
     /**
      * Called by org instances. Accepts a batch of events in one call to reduce
      * network overhead. Also updates org.lastSeenAt as a heartbeat side-effect.
      */
-    @Transactional
     public List<TelemetryEvent> ingest(UUID orgId, List<TelemetryEvent> events) {
-        orgRepo.findById(orgId)
+        return ingest(orgId, events, null);
+    }
+
+    @Transactional
+    public List<TelemetryEvent> ingest(UUID orgId, List<TelemetryEvent> events, String reportedFingerprint) {
+        var org = orgRepo.findById(orgId)
             .orElseThrow(() -> new ControlCenterException("Organization not found: " + orgId));
 
         events.forEach(e -> {
@@ -39,10 +45,16 @@ public class TelemetryService {
         List<TelemetryEvent> saved = repo.saveAll(events);
 
         // Heartbeat — update lastSeenAt whenever the org ships any telemetry
-        orgRepo.findById(orgId).ifPresent(org -> {
-            org.setLastSeenAt(LocalDateTime.now());
-            orgRepo.save(org);
-        });
+        org.setLastSeenAt(LocalDateTime.now());
+        orgRepo.save(org);
+
+        // Commercial-enforcement radar: flag over-version / running-while-unentitled. Best-effort —
+        // a detection failure must never reject the org's telemetry.
+        try {
+            anomalyDetection.inspect(org, events, reportedFingerprint);
+        } catch (Exception ex) {
+            log.warn("Anomaly detection failed for org {}: {}", orgId, ex.getMessage());
+        }
 
         return saved;
     }

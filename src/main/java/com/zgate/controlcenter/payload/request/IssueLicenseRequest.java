@@ -11,8 +11,13 @@ import java.util.UUID;
 public class IssueLicenseRequest {
     @NotNull  private UUID organizationId;
     @NotBlank private String moduleName;
+    /** Optional. When null, defaults to now + the org's licenseTtlDays (short-lived, auto-renewed). */
     private LocalDateTime expiresAt;
     private Integer maxUsers;
     private String features;
     private String fingerprint;
+    /** Optional overrides; when null, maxVersion falls back to the org's entitledVersion. */
+    private String maxVersion;
+    private String imageDigest;
+    private Integer graceDays;
 }

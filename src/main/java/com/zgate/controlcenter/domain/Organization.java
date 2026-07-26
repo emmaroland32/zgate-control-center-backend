@@ -49,6 +49,20 @@ public class Organization {
     private UUID partnerId;
     private Integer activeUsers;
 
+    /**
+     * Commercial entitlement — the levers that make licensing a real subscription control:
+     *   subscriptionValidUntil — paid-through date. The license renewal job re-issues short-lived
+     *       licenses only while this is in the future; once it lapses, renewals stop and the org's
+     *       license expires → grace → lock (the non-payment kill switch). NULL = unmanaged/perpetual
+     *       (never auto-lapsed) so existing orgs are unaffected until a subscription is set.
+     *   entitledVersion — highest ZGATE version this org has paid for; stamped as the license
+     *       maxVersion so a self-upgrade past it is refused at runtime.
+     *   licenseTtlDays — how short-lived each issued/renewed license is (default applied when null).
+     */
+    private LocalDateTime subscriptionValidUntil;
+    private String entitledVersion;
+    private Integer licenseTtlDays;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

@@ -31,6 +31,17 @@ public class License {
     private String licenseFileHash;
     private String fingerprint;
 
+    /**
+     * Commercial-enforcement fields carried into the signed bundle and enforced at runtime by the
+     * org-side LicenseEnforcementService:
+     *   maxVersion  — highest ZGATE build this license permits (blocks customer self-upgrade)
+     *   imageDigest — the entitled container image digest (verified against the running image)
+     *   graceDays   — days after expiry before the org hard-locks (null → org-side default)
+     */
+    private String maxVersion;
+    private String imageDigest;
+    private Integer graceDays;
+
     @Column(columnDefinition = "TEXT")
     private String features; // JSON
 

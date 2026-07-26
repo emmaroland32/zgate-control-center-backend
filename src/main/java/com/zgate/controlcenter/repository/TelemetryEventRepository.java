@@ -62,4 +62,8 @@ public interface TelemetryEventRepository extends JpaRepository<TelemetryEvent, 
 
     List<TelemetryEvent> findTop20ByOrganizationIdAndLevelOrderByOccurredAtDesc(
             UUID orgId, TelemetryEvent.Level level);
+
+    /** Dedupe guard for anomaly detection: has this org already been flagged with this code recently? */
+    boolean existsByOrganizationIdAndErrorCodeAndReceivedAtAfter(
+            UUID organizationId, String errorCode, LocalDateTime since);
 }
