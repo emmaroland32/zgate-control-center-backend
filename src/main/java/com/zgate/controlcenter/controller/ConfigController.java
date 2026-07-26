@@ -3,6 +3,7 @@ package com.zgate.controlcenter.controller;
 import com.zgate.controlcenter.domain.ConfigSnapshot;
 import com.zgate.controlcenter.domain.ControlCenterConfig;
 import com.zgate.controlcenter.service.ControlCenterConfigService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -37,6 +38,7 @@ public class ConfigController {
     }
 
     @PutMapping("/{key}")
+    @ResponseMessage(code = "CONFIG_SAVED", value = "Setting saved")
     public ResponseEntity<ControlCenterConfig> upsert(@PathVariable String key,
                                                @RequestBody Map<String, String> body,
                                                @AuthenticationPrincipal UserDetails user) {
@@ -45,6 +47,7 @@ public class ConfigController {
     }
 
     @PostMapping("/batch")
+    @ResponseMessage(code = "CONFIG_SAVED", value = "Settings saved")
     public ResponseEntity<List<ControlCenterConfig>> updateBatch(@RequestBody List<Map<String, String>> updates,
                                                           @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.updateBatch(updates, user.getUsername()));
@@ -58,9 +61,10 @@ public class ConfigController {
 
     @DeleteMapping("/{key}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable String key) {
+    @ResponseMessage(code = "CONFIG_DELETED", value = "Setting deleted")
+    public ResponseEntity<?> delete(@PathVariable String key) {
         service.delete(key);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("key", key));
     }
 
     // ── Snapshots ──────────────────────────────────────────────
@@ -71,6 +75,7 @@ public class ConfigController {
     }
 
     @PostMapping("/snapshots")
+    @ResponseMessage(code = "SNAPSHOT_CREATED", value = "Snapshot created")
     public ResponseEntity<ConfigSnapshot> takeSnapshot(
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal UserDetails user) {
@@ -83,16 +88,18 @@ public class ConfigController {
 
     @PostMapping("/snapshots/{id}/restore")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<Void> restoreSnapshot(@PathVariable UUID id,
+    @ResponseMessage(code = "SNAPSHOT_RESTORED", value = "Snapshot restored")
+    public ResponseEntity<?> restoreSnapshot(@PathVariable UUID id,
                                                   @AuthenticationPrincipal UserDetails user) {
         service.restoreSnapshot(id, user.getUsername());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id.toString()));
     }
 
     @DeleteMapping("/snapshots/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<Void> deleteSnapshot(@PathVariable UUID id) {
+    @ResponseMessage(code = "SNAPSHOT_DELETED", value = "Snapshot deleted")
+    public ResponseEntity<?> deleteSnapshot(@PathVariable UUID id) {
         service.deleteSnapshot(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id.toString()));
     }
 }

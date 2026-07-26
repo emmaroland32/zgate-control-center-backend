@@ -29,7 +29,8 @@ public class OrganizationService {
 
     public Organization findById(UUID id) {
         return orgRepo.findById(id)
-            .orElseThrow(() -> new ControlCenterException("Organization not found: " + id));
+            .orElseThrow(() -> new ControlCenterException("Organization not found: " + id,
+                "ORG_NOT_FOUND", org.springframework.http.HttpStatus.NOT_FOUND));
     }
 
     public Organization findBySlug(String slug) {
@@ -40,7 +41,9 @@ public class OrganizationService {
     @CacheEvict(value = "organizations", allEntries = true)
     public Organization create(CreateOrganizationRequest req) {
         if (orgRepo.findBySlug(req.getSlug()).isPresent()) {
-            throw new ControlCenterException("Slug already in use: " + req.getSlug());
+            throw new ControlCenterException(
+                "An organization with the slug '" + req.getSlug() + "' already exists. Choose a different name or slug.",
+                "ORG_SLUG_TAKEN", org.springframework.http.HttpStatus.CONFLICT);
         }
         // Generate the machine-to-machine service API key (used by the install to authenticate its
         // callbacks). We store only the SHA-256 hash and reveal the raw key once in this response.
@@ -116,10 +119,10 @@ public class OrganizationService {
     }
 
     @CacheEvict(value = "organizations", allEntries = true)
-    public void updateStatus(UUID id, Organization.DeploymentStatus status) {
+    public Organization updateStatus(UUID id, Organization.DeploymentStatus status) {
         Organization org = findById(id);
         org.setDeploymentStatus(status);
-        orgRepo.save(org);
+        return orgRepo.save(org);
     }
 
     /** Set the org's commercial entitlements (subscription, entitled version, seats, deployment tier). */

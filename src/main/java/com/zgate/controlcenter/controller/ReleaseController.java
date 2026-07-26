@@ -3,6 +3,7 @@ package com.zgate.controlcenter.controller;
 import com.zgate.controlcenter.domain.Release;
 import com.zgate.controlcenter.payload.request.CreateReleaseRequest;
 import com.zgate.controlcenter.service.ReleaseService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +39,7 @@ public class ReleaseController {
 
     @PostMapping
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "RELEASE_PUBLISHED", value = "Release published")
     public ResponseEntity<Release> publish(@Valid @RequestBody CreateReleaseRequest req,
                                            @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.publish(req, user.getUsername()));
@@ -45,12 +47,14 @@ public class ReleaseController {
 
     @PostMapping("/{id}/approve")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "RELEASE_APPROVED", value = "Release approved")
     public ResponseEntity<Release> approve(@PathVariable UUID id) {
         return ResponseEntity.ok(service.approve(id));
     }
 
     @PostMapping("/{id}/reject")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "RELEASE_REJECTED", value = "Release rejected")
     public ResponseEntity<Release> reject(@PathVariable UUID id) {
         return ResponseEntity.ok(service.reject(id));
     }

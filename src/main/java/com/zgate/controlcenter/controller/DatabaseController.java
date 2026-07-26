@@ -1,6 +1,7 @@
 package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.service.DatabaseService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -51,14 +52,16 @@ public class DatabaseController {
 
     @PostMapping("/backups")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @ResponseMessage(code = "BACKUP_CREATED", value = "Backup created")
     public ResponseEntity<DatabaseService.BackupEntry> createBackup(@RequestBody Map<String, String> body) {
         return ResponseEntity.ok(service.createBackup(body.getOrDefault("name", "backup")));
     }
 
     @DeleteMapping("/backups/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<Void> deleteBackup(@PathVariable String id) {
+    @ResponseMessage(code = "BACKUP_DELETED", value = "Backup deleted")
+    public ResponseEntity<?> deleteBackup(@PathVariable String id) {
         service.deleteBackup(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id));
     }
 }

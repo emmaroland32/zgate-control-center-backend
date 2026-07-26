@@ -4,6 +4,7 @@ import com.zgate.controlcenter.domain.OrgServiceSubscription;
 import com.zgate.controlcenter.domain.ServiceUsage;
 import com.zgate.controlcenter.domain.SharedService;
 import com.zgate.controlcenter.service.SharedServiceManager;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -33,12 +34,14 @@ public class SharedServiceController {
 
     @PostMapping
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "SERVICE_CREATED", value = "Service created")
         public ResponseEntity<SharedService> create(@RequestBody SharedService service) {
         return ResponseEntity.ok(manager.create(service));
     }
 
     @PutMapping("/{id}")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "SERVICE_UPDATED", value = "Service updated")
         public ResponseEntity<SharedService> update(@PathVariable UUID id, @RequestBody SharedService service) {
         return ResponseEntity.ok(manager.update(id, service));
     }
@@ -57,6 +60,7 @@ public class SharedServiceController {
 
     @PostMapping("/subscriptions/{orgId}/enable")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "SERVICE_ENABLED", value = "Service enabled for organization")
         public ResponseEntity<OrgServiceSubscription> enable(@PathVariable UUID orgId,
                                                           @RequestBody EnableRequest req) {
         return ResponseEntity.ok(manager.enableForOrg(orgId, req.getServiceId(), req.getCallLimit(), req.getEnabledBy()));
@@ -64,9 +68,10 @@ public class SharedServiceController {
 
     @PostMapping("/subscriptions/{orgId}/disable")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-        public ResponseEntity<Void> disable(@PathVariable UUID orgId, @RequestParam UUID serviceId) {
+    @ResponseMessage(code = "SERVICE_DISABLED", value = "Service disabled for organization")
+        public ResponseEntity<?> disable(@PathVariable UUID orgId, @RequestParam UUID serviceId) {
         manager.disableForOrg(orgId, serviceId);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(java.util.Map.of("orgId", orgId.toString(), "serviceId", serviceId.toString()));
     }
 
     // --- Usage tracking — called by deployed ZGATE instances (no auth required, uses API key) ---

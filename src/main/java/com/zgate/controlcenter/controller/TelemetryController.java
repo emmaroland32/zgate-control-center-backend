@@ -2,6 +2,7 @@ package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.domain.TelemetryEvent;
 import com.zgate.controlcenter.service.TelemetryService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -87,6 +88,7 @@ public class TelemetryController {
     // ----------------------------------------------------------------
 
     @PostMapping("/{id}/acknowledge")
+    @ResponseMessage(code = "EVENT_ACKNOWLEDGED", value = "Acknowledged")
     public ResponseEntity<TelemetryEvent> acknowledge(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserDetails user) {
@@ -94,12 +96,13 @@ public class TelemetryController {
     }
 
     @PostMapping("/acknowledge-all")
-    public ResponseEntity<Void> acknowledgeAll(
+    @ResponseMessage(code = "EVENTS_ACKNOWLEDGED", value = "Acknowledged")
+    public ResponseEntity<?> acknowledgeAll(
             @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) TelemetryEvent.Level level,
             @AuthenticationPrincipal UserDetails user) {
         service.acknowledgeAll(orgId, level, user.getUsername());
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(java.util.Map.of("ok", Boolean.TRUE));
     }
 
     // ----------------------------------------------------------------

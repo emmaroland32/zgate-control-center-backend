@@ -5,6 +5,7 @@ import com.zgate.controlcenter.payload.request.CreateOrganizationRequest;
 import com.zgate.controlcenter.payload.request.UpdateEntitlementRequest;
 import com.zgate.controlcenter.service.AuditService;
 import com.zgate.controlcenter.service.OrganizationService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,7 @@ public class OrganizationController {
 
     @PostMapping
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "ORG_CREATED", value = "Organization created successfully")
     public ResponseEntity<Organization> create(@Valid @RequestBody CreateOrganizationRequest req,
                                                @AuthenticationPrincipal UserDetails user) {
         Organization org = service.create(req);
@@ -52,6 +54,7 @@ public class OrganizationController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "ORG_UPDATED", value = "Organization updated successfully")
     public ResponseEntity<Organization> update(@PathVariable UUID id,
                                                @Valid @RequestBody CreateOrganizationRequest req) {
         return ResponseEntity.ok(service.update(id, req));
@@ -59,10 +62,10 @@ public class OrganizationController {
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> updateStatus(@PathVariable UUID id,
-                                             @RequestParam Organization.DeploymentStatus status) {
-        service.updateStatus(id, status);
-        return ResponseEntity.ok().build();
+    @ResponseMessage(code = "ORG_STATUS_UPDATED", value = "Organization status updated")
+    public ResponseEntity<Organization> updateStatus(@PathVariable UUID id,
+                                                     @RequestParam Organization.DeploymentStatus status) {
+        return ResponseEntity.ok(service.updateStatus(id, status));
     }
 
     /**
@@ -72,6 +75,7 @@ public class OrganizationController {
      */
     @PatchMapping("/{id}/entitlements")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "ORG_ENTITLEMENT_UPDATED", value = "Entitlements updated")
     public ResponseEntity<Organization> updateEntitlements(@PathVariable UUID id,
                                                            @RequestBody UpdateEntitlementRequest req,
                                                            @AuthenticationPrincipal UserDetails user) {
@@ -91,6 +95,7 @@ public class OrganizationController {
      */
     @PostMapping("/{id}/regenerate-key")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "ORG_KEY_REGENERATED", value = "Service key regenerated")
     public ResponseEntity<Organization> regenerateKey(@PathVariable UUID id,
                                                       @AuthenticationPrincipal UserDetails user) {
         Organization org = service.regenerateServiceKey(id);

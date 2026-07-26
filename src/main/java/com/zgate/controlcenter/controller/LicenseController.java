@@ -9,6 +9,7 @@ import com.zgate.controlcenter.service.LicenseService.FingerprintResult;
 import com.zgate.controlcenter.service.LicenseService.LicenseBundle;
 import com.zgate.controlcenter.service.LicenseService.VerifyResult;
 import com.zgate.controlcenter.service.LicenseService.BulkVerifyResult;
+import com.zgate.controlcenter.web.ResponseMessage;
 import jakarta.validation.Valid;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,7 @@ public class LicenseController {
 
     @PostMapping("/issue")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSE_ISSUED", value = "License issued")
     public ResponseEntity<License> issue(@Valid @RequestBody IssueLicenseRequest req,
                                          @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.issue(req, user.getUsername()));
@@ -59,6 +61,7 @@ public class LicenseController {
 
     @PostMapping("/issue-bulk")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSES_ISSUED", value = "Licenses issued")
     public ResponseEntity<LicenseBundle> issueBulk(@RequestBody IssueBulkRequest req,
                                                     @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.issueBulk(req, user.getUsername()));
@@ -66,6 +69,7 @@ public class LicenseController {
 
     @PostMapping("/{id}/deactivate")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSE_DEACTIVATED", value = "License deactivated")
     public ResponseEntity<License> deactivate(@PathVariable UUID id) {
         return ResponseEntity.ok(service.deactivate(id));
     }
@@ -87,6 +91,7 @@ public class LicenseController {
 
     @PostMapping("/activate-json")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSE_ACTIVATED", value = "License activated")
     public ResponseEntity<License> activateJson(@RequestBody ActivateJsonRequest req,
                                                 @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(
@@ -100,6 +105,7 @@ public class LicenseController {
 
     @PostMapping("/activate-file")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSE_ACTIVATED", value = "License activated")
     public ResponseEntity<License> activateFile(@RequestParam UUID orgId,
                                                 @RequestParam String moduleName,
                                                 @RequestParam("file") MultipartFile file,
@@ -115,6 +121,7 @@ public class LicenseController {
 
     @PostMapping("/{id}/generate-bundle")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "LICENSE_BUNDLE_GENERATED", value = "License bundle generated")
     public ResponseEntity<LicenseBundle> generateBundle(@PathVariable UUID id) {
         return ResponseEntity.ok(service.generateBundle(id));
     }
@@ -139,6 +146,7 @@ public class LicenseController {
 
     /** Called by ZGATE org instances to pull their active signed bundles. */
     @GetMapping("/bundle")
+    @com.zgate.controlcenter.web.RawResponse // machine-parsed as a JSON array (ControlCenterLicenseSync) — must not be enveloped
     public ResponseEntity<List<BundleDelivery>> fetchBundle(
             @RequestHeader("X-Control-Center-Org-Id") UUID orgId) {
         return ResponseEntity.ok(service.fetchBundlesForOrg(orgId));

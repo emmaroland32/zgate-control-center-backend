@@ -1,6 +1,7 @@
 package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.service.InfrastructureService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,23 +24,26 @@ public class InfrastructureController {
 
     @PostMapping("/containers/{id}/start")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> startContainer(@PathVariable String id) {
+    @ResponseMessage(code = "CONTAINER_STARTED", value = "Container started")
+    public ResponseEntity<?> startContainer(@PathVariable String id) {
         service.startContainer(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id));
     }
 
     @PostMapping("/containers/{id}/stop")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> stopContainer(@PathVariable String id) {
+    @ResponseMessage(code = "CONTAINER_STOPPED", value = "Container stopped")
+    public ResponseEntity<?> stopContainer(@PathVariable String id) {
         service.stopContainer(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id));
     }
 
     @PostMapping("/containers/{id}/restart")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> restartContainer(@PathVariable String id) {
+    @ResponseMessage(code = "CONTAINER_RESTARTED", value = "Container restarted")
+    public ResponseEntity<?> restartContainer(@PathVariable String id) {
         service.restartContainer(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id));
     }
 
     @GetMapping("/containers/{id}/logs")
@@ -61,9 +65,10 @@ public class InfrastructureController {
 
     @DeleteMapping("/volumes/{name}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<Void> deleteVolume(@PathVariable String name) {
+    @ResponseMessage(code = "VOLUME_DELETED", value = "Volume deleted")
+    public ResponseEntity<?> deleteVolume(@PathVariable String name) {
         service.deleteVolume(name);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(java.util.Map.of("name", name));
     }
 
     @GetMapping("/compose/config")

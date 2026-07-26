@@ -6,6 +6,7 @@ import com.zgate.controlcenter.domain.Webhook;
 import com.zgate.controlcenter.domain.WebhookDelivery;
 import com.zgate.controlcenter.service.IntegrationService;
 import com.zgate.controlcenter.service.IntegrationService.CreateApiKeyResult;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,6 +38,7 @@ public class IntegrationController {
     }
 
     @PostMapping("/webhooks")
+    @ResponseMessage(code = "WEBHOOK_CREATED", value = "Webhook created")
     public ResponseEntity<Webhook> createWebhook(@RequestBody CreateWebhookRequest req,
                                                   @AuthenticationPrincipal UserDetails user) {
         Webhook webhook = Webhook.builder()
@@ -53,6 +55,7 @@ public class IntegrationController {
     }
 
     @PutMapping("/webhooks/{id}")
+    @ResponseMessage(code = "WEBHOOK_UPDATED", value = "Webhook updated")
     public ResponseEntity<Webhook> updateWebhook(@PathVariable UUID id,
                                                   @RequestBody CreateWebhookRequest req) {
         Webhook patch = Webhook.builder()
@@ -67,16 +70,18 @@ public class IntegrationController {
     }
 
     @PatchMapping("/webhooks/{id}/toggle")
-    public ResponseEntity<Void> toggleWebhook(@PathVariable UUID id) {
+    @ResponseMessage(code = "WEBHOOK_TOGGLED", value = "Webhook toggled")
+    public ResponseEntity<?> toggleWebhook(@PathVariable UUID id) {
         service.toggleWebhook(id);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("id", id.toString()));
     }
 
     @DeleteMapping("/webhooks/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteWebhook(@PathVariable UUID id) {
+    @ResponseMessage(code = "WEBHOOK_DELETED", value = "Webhook deleted")
+    public ResponseEntity<?> deleteWebhook(@PathVariable UUID id) {
         service.deleteWebhook(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(Map.of("id", id.toString()));
     }
 
     @GetMapping("/webhooks/logs")
@@ -99,6 +104,7 @@ public class IntegrationController {
     }
 
     @PostMapping("/api-keys")
+    @ResponseMessage(code = "API_KEY_CREATED", value = "API key created")
     public ResponseEntity<CreateApiKeyResult> createApiKey(@RequestBody CreateApiKeyRequest req,
                                                             @AuthenticationPrincipal UserDetails user) {
         CreateApiKeyResult result = service.createApiKey(
@@ -111,10 +117,11 @@ public class IntegrationController {
 
     @DeleteMapping("/api-keys/{id}/revoke")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> revokeApiKey(@PathVariable UUID id,
+    @ResponseMessage(code = "API_KEY_REVOKED", value = "API key revoked")
+    public ResponseEntity<?> revokeApiKey(@PathVariable UUID id,
                                               @AuthenticationPrincipal UserDetails user) {
         service.revokeApiKey(id, user.getUsername());
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("id", id.toString()));
     }
 
     // ----------------------------------------------------------------
@@ -127,11 +134,13 @@ public class IntegrationController {
     }
 
     @PostMapping("/{id}/toggle")
+    @ResponseMessage(code = "INTEGRATION_TOGGLED", value = "Integration toggled")
     public ResponseEntity<IntegrationConfig> toggleIntegration(@PathVariable UUID id) {
         return ResponseEntity.ok(service.toggleIntegration(id));
     }
 
     @PutMapping("/{id}/config")
+    @ResponseMessage(code = "INTEGRATION_UPDATED", value = "Integration configuration updated")
     public ResponseEntity<IntegrationConfig> updateIntegrationConfig(
             @PathVariable UUID id, @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(service.updateIntegrationConfig(id, body.get("config")));

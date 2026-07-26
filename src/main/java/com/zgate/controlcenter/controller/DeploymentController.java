@@ -5,6 +5,7 @@ import com.zgate.controlcenter.payload.request.PushUpdateRequest;
 import com.zgate.controlcenter.service.DeploymentService;
 import com.zgate.controlcenter.service.ImagePullTokenService;
 import com.zgate.controlcenter.service.ImagePullTokenService.PullAuthorization;
+import com.zgate.controlcenter.web.ResponseMessage;
 import jakarta.validation.Valid;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class DeploymentController {
 
     @PostMapping("/push-update")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "UPDATE_PUSHED", value = "Update pushed")
     public ResponseEntity<List<Deployment>> push(@Valid @RequestBody PushUpdateRequest req,
                                                   @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.pushUpdate(req, user.getUsername()));
@@ -60,6 +62,7 @@ public class DeploymentController {
 
     @PostMapping("/{id}/rollback")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "DEPLOYMENT_ROLLED_BACK", value = "Deployment rolled back")
     public ResponseEntity<Deployment> rollback(@PathVariable UUID id,
                                                 @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.rollback(id, user.getUsername()));
@@ -73,6 +76,7 @@ public class DeploymentController {
      * agent can distinguish "not entitled" from a transport error.
      */
     @PostMapping("/pull-token")
+    @com.zgate.controlcenter.web.RawResponse // machine/agent contract — returns pull credentials raw, no envelope
     public ResponseEntity<PullAuthorization> pullToken(
             @RequestHeader("X-Control-Center-Org-Id") UUID orgId,
             @RequestBody(required = false) PullTokenRequest body) {

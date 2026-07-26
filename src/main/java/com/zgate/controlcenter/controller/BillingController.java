@@ -5,6 +5,7 @@ import com.zgate.controlcenter.domain.InvoiceLineItem;
 import com.zgate.controlcenter.repository.InvoiceLineItemRepository;
 import com.zgate.controlcenter.repository.InvoiceRepository;
 import com.zgate.controlcenter.service.BillingService;
+import com.zgate.controlcenter.web.ResponseMessage;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -56,6 +57,7 @@ public class BillingController {
 
     @PostMapping("/invoices/generate")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "INVOICE_GENERATED", value = "Invoice generated")
     public ResponseEntity<Invoice> generate(@RequestBody GenerateInvoiceRequest req) {
         return ResponseEntity.ok(billingService.generateInvoice(
             req.getOrganizationId(), req.getPeriodStart(), req.getPeriodEnd(), "SYSTEM"));
@@ -63,13 +65,15 @@ public class BillingController {
 
     @PostMapping("/invoices/{id}/send")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    public ResponseEntity<Void> send(@PathVariable UUID id) {
+    @ResponseMessage(code = "INVOICE_SENT", value = "Invoice sent")
+    public ResponseEntity<?> send(@PathVariable UUID id) {
         billingService.sendInvoice(id);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(java.util.Map.of("id", id.toString()));
     }
 
     @PostMapping("/invoices/{id}/pay")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "INVOICE_PAID", value = "Invoice marked as paid")
     public ResponseEntity<Invoice> markPaid(@PathVariable UUID id) {
         return ResponseEntity.ok(billingService.markPaid(id));
     }
