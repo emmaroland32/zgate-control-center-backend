@@ -66,4 +66,15 @@ public interface TelemetryEventRepository extends JpaRepository<TelemetryEvent, 
     /** Dedupe guard for anomaly detection: has this org already been flagged with this code recently? */
     boolean existsByOrganizationIdAndErrorCodeAndReceivedAtAfter(
             UUID organizationId, String errorCode, LocalDateTime since);
+
+    /** Fleet licensing dashboard: unacknowledged event counts per error code within a category. */
+    @Query("SELECT t.errorCode, COUNT(t) FROM TelemetryEvent t " +
+           "WHERE t.category = :category AND t.acknowledged = false AND t.errorCode IS NOT NULL " +
+           "GROUP BY t.errorCode")
+    List<Object[]> countUnacknowledgedByCode(@Param("category") TelemetryEvent.Category category);
+
+    /** How many distinct orgs have an open anomaly in this category. */
+    @Query("SELECT COUNT(DISTINCT t.organizationId) FROM TelemetryEvent t " +
+           "WHERE t.category = :category AND t.acknowledged = false")
+    long countDistinctAffectedOrgs(@Param("category") TelemetryEvent.Category category);
 }

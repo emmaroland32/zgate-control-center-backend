@@ -123,6 +123,28 @@ public class TelemetryService {
 
     public record TelemetryStats(long unacknowledgedErrors, long unacknowledgedWarnings, long errorsLast24h) {}
 
+    /**
+     * Fleet-wide licensing posture for the compliance dashboard: how many open LICENSE anomalies exist,
+     * across how many orgs, broken down by type, plus the most recent events.
+     */
+    public LicenseAnomalySummary licenseAnomalySummary() {
+        var cat = TelemetryEvent.Category.LICENSE;
+        java.util.Map<String, Long> byCode = new java.util.LinkedHashMap<>();
+        long total = 0;
+        for (Object[] row : repo.countUnacknowledgedByCode(cat)) {
+            long c = ((Number) row[1]).longValue();
+            byCode.put((String) row[0], c);
+            total += c;
+        }
+        long affectedOrgs = repo.countDistinctAffectedOrgs(cat);
+        List<TelemetryEvent> recent = repo.search(null, null, cat.name(), null, null, false,
+                PageRequest.of(0, 100)).getContent();
+        return new LicenseAnomalySummary(total, affectedOrgs, byCode, recent);
+    }
+
+    public record LicenseAnomalySummary(long total, long affectedOrgs,
+                                        java.util.Map<String, Long> byCode, List<TelemetryEvent> recent) {}
+
     public String exportCsv(UUID orgId, TelemetryEvent.Level level,
                              TelemetryEvent.Category category,
                              LocalDateTime from, LocalDateTime to) {

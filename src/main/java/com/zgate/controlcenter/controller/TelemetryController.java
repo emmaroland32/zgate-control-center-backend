@@ -72,6 +72,12 @@ public class TelemetryController {
         return ResponseEntity.ok(service.getStatsByOrg(orgId));
     }
 
+    /** Fleet-wide licensing/compliance posture for the licensing dashboard. */
+    @GetMapping("/license-summary")
+    public ResponseEntity<?> licenseSummary() {
+        return ResponseEntity.ok(service.licenseAnomalySummary());
+    }
+
     // ----------------------------------------------------------------
     // Acknowledge
     // ----------------------------------------------------------------
