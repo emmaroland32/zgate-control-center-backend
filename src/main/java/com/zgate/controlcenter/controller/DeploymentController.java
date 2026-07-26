@@ -26,6 +26,7 @@ public class DeploymentController {
 
     private final DeploymentService service;
     private final ImagePullTokenService pullTokenService;
+    private final com.zgate.controlcenter.service.AnomalyDetectionService anomalyDetection;
 
     @GetMapping
     public ResponseEntity<List<Deployment>> findAll() {
@@ -83,6 +84,12 @@ public class DeploymentController {
 
     @Data static class PullTokenRequest {
         private String version; // optional; null → latest entitled release
+    }
+
+    /** Admin view of an org's live installs (for spotting a copied / over-deployed license). */
+    @GetMapping("/org/{orgId}/instances")
+    public ResponseEntity<List<com.zgate.controlcenter.domain.OrgInstance>> instances(@PathVariable UUID orgId) {
+        return ResponseEntity.ok(anomalyDetection.liveInstances(orgId));
     }
 
     @Data static class StatusUpdate {

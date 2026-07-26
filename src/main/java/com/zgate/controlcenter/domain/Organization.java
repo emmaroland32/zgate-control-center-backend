@@ -63,6 +63,13 @@ public class Organization {
     private String entitledVersion;
     private Integer licenseTtlDays;
 
+    /**
+     * Entitled number of concurrent installs. The instance registry (distinct machine fingerprints
+     * reported within a window) is compared to this; more live installs than this = a copied /
+     * over-deployed license. NULL = unmanaged (no concurrent-use check).
+     */
+    private Integer maxInstances;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

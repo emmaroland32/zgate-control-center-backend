@@ -1,9 +1,11 @@
 package com.zgate.controlcenter.service;
 
 import com.zgate.controlcenter.domain.License;
+import com.zgate.controlcenter.domain.OrgInstance;
 import com.zgate.controlcenter.domain.Organization;
 import com.zgate.controlcenter.domain.TelemetryEvent;
 import com.zgate.controlcenter.repository.LicenseRepository;
+import com.zgate.controlcenter.repository.OrgInstanceRepository;
 import com.zgate.controlcenter.repository.OrganizationRepository;
 import com.zgate.controlcenter.repository.TelemetryEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,7 @@ public class AnomalyDetectionService {
     private final TelemetryEventRepository telemetryRepo;
     private final OrganizationRepository orgRepo;
     private final LicenseRepository licenseRepo;
+    private final OrgInstanceRepository instanceRepo;
 
     @Value("${controlcenter.anomaly.enabled:true}")
     private boolean enabled;
@@ -47,6 +50,14 @@ public class AnomalyDetectionService {
     /** Don't re-raise the same anomaly for an org more than once per this window. */
     @Value("${controlcenter.anomaly.dedupeWindowHours:12}")
     private int dedupeWindowHours;
+
+    /**
+     * How recently a fingerprint must have reported to count as a live install. Kept modest so a DB
+     * failover / host move (which changes the fingerprint) ages the old install out quickly rather than
+     * lingering as a phantom second instance.
+     */
+    @Value("${controlcenter.anomaly.instanceWindowHours:6}")
+    private int instanceWindowHours;
 
     /** Version comparison precision for the over-version check: major | minor | exact. */
     @Value("${controlcenter.anomaly.versionGranularity:minor}")
@@ -94,14 +105,27 @@ public class AnomalyDetectionService {
                     + org.getSubscriptionValidUntil() + ".", now, raised);
         }
 
-        // 3. Copied license: the reported machine fingerprint differs from the one the org's active
-        // license is bound to → the license is running somewhere it wasn't issued for.
+        // 3. Copied license, two complementary signals:
         if (reportedFingerprint != null && !reportedFingerprint.isBlank()) {
+            // (a) Wrong-machine: reported fingerprint != the one the org's license is bound to.
             String bound = boundFingerprint(org.getId());
             if (bound != null && !bound.equals(reportedFingerprint)) {
                 raise(org, "FINGERPRINT_MISMATCH",
                     "Reported machine fingerprint does not match the license binding — possible copied license.",
                     now, raised);
+            }
+
+            // (b) Too-many-machines: record this install and flag if more distinct installs are live
+            // than the org is entitled to. Catches copies even when the license is unbound.
+            recordInstance(org.getId(), reportedFingerprint, reportedVersion, now);
+            if (org.getMaxInstances() != null) {
+                long live = instanceRepo.countByOrganizationIdAndLastSeenAtAfter(
+                    org.getId(), now.minusHours(Math.max(1, instanceWindowHours)));
+                if (live > org.getMaxInstances()) {
+                    raise(org, "MULTIPLE_INSTANCES",
+                        live + " live installs detected but only " + org.getMaxInstances()
+                            + " entitled — possible copied / over-deployed license.", now, raised);
+                }
             }
         }
 
@@ -131,6 +155,22 @@ public class AnomalyDetectionService {
             .build();
         out.add(telemetryRepo.save(ev));
         log.warn("LICENSE ANOMALY [{}] org={}: {}", code, org.getId(), message);
+    }
+
+    /** The org's live installs (fingerprints seen within the instance window) — for the CC dashboard. */
+    public List<OrgInstance> liveInstances(java.util.UUID orgId) {
+        return instanceRepo.findByOrganizationIdAndLastSeenAtAfter(
+            orgId, LocalDateTime.now().minusHours(Math.max(1, instanceWindowHours)));
+    }
+
+    /** Upsert the reporting install into the instance registry, refreshing its last-seen timestamp. */
+    private void recordInstance(java.util.UUID orgId, String fingerprint, String appVersion, LocalDateTime now) {
+        OrgInstance inst = instanceRepo.findByOrganizationIdAndFingerprint(orgId, fingerprint)
+            .orElseGet(() -> OrgInstance.builder()
+                .organizationId(orgId).fingerprint(fingerprint).firstSeenAt(now).build());
+        inst.setLastSeenAt(now);
+        if (appVersion != null && !appVersion.isBlank()) inst.setAppVersion(appVersion);
+        instanceRepo.save(inst);
     }
 
     /** The fingerprint the org's active license is bound to, or null if unbound / no active license. */

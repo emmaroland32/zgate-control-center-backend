@@ -4,6 +4,7 @@ import com.zgate.controlcenter.domain.License;
 import com.zgate.controlcenter.domain.Organization;
 import com.zgate.controlcenter.domain.TelemetryEvent;
 import com.zgate.controlcenter.repository.LicenseRepository;
+import com.zgate.controlcenter.repository.OrgInstanceRepository;
 import com.zgate.controlcenter.repository.OrganizationRepository;
 import com.zgate.controlcenter.repository.TelemetryEventRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +33,7 @@ class AnomalyDetectionTest {
     private TelemetryEventRepository telemetryRepo;
     private OrganizationRepository orgRepo;
     private LicenseRepository licenseRepo;
+    private OrgInstanceRepository instanceRepo;
     private AnomalyDetectionService svc;
 
     @BeforeEach
@@ -39,10 +41,12 @@ class AnomalyDetectionTest {
         telemetryRepo = mock(TelemetryEventRepository.class);
         orgRepo = mock(OrganizationRepository.class);
         licenseRepo = mock(LicenseRepository.class);
-        svc = new AnomalyDetectionService(telemetryRepo, orgRepo, licenseRepo);
+        instanceRepo = mock(OrgInstanceRepository.class);
+        svc = new AnomalyDetectionService(telemetryRepo, orgRepo, licenseRepo, instanceRepo);
         ReflectionTestUtils.setField(svc, "enabled", true);
         ReflectionTestUtils.setField(svc, "dedupeWindowHours", 12);
         ReflectionTestUtils.setField(svc, "versionGranularity", "minor");
+        ReflectionTestUtils.setField(svc, "instanceWindowHours", 6);
         when(telemetryRepo.save(any())).thenAnswer(i -> i.getArgument(0));
     }
 
@@ -139,11 +143,49 @@ class AnomalyDetectionTest {
     }
 
     @Test
-    @DisplayName("unbound license (no fingerprint) → fingerprint check skipped")
+    @DisplayName("unbound license (no fingerprint) → fingerprint-binding check skipped")
     void unboundLicenseNotFlagged() {
         Organization o = org(null, null);
         boundLicense(o, null);
         assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP-ANYTHING")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("more live installs than entitled → MULTIPLE_INSTANCES (copy detected even if unbound)")
+    void overDeployedFlagged() {
+        Organization o = org(null, null);
+        o.setMaxInstances(1);
+        when(instanceRepo.countByOrganizationIdAndLastSeenAtAfter(eq(o.getId()), any())).thenReturn(2L);
+        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2");
+        assertThat(raised).extracting(TelemetryEvent::getErrorCode).contains("MULTIPLE_INSTANCES");
+    }
+
+    @Test
+    @DisplayName("live installs within entitlement → no MULTIPLE_INSTANCES (e.g. prod + DR)")
+    void withinInstanceLimitOk() {
+        Organization o = org(null, null);
+        o.setMaxInstances(2);
+        when(instanceRepo.countByOrganizationIdAndLastSeenAtAfter(eq(o.getId()), any())).thenReturn(2L);
+        assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("unmanaged org (maxInstances null) is never flagged for concurrent use")
+    void unmanagedInstancesNotFlagged() {
+        Organization o = org(null, null); // maxInstances null
+        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2");
+        assertThat(raised).isEmpty();
+        // the count query is never even consulted for an unmanaged org
+        org.mockito.Mockito.verify(instanceRepo, org.mockito.Mockito.never())
+            .countByOrganizationIdAndLastSeenAtAfter(any(), any());
+    }
+
+    @Test
+    @DisplayName("each heartbeat records/refreshes the reporting install in the registry")
+    void heartbeatRecordsInstance() {
+        Organization o = org(null, null);
+        svc.inspect(o, heartbeat("1.2.3"), "FP-MACHINE-1");
+        org.mockito.Mockito.verify(instanceRepo).save(any());
     }
 
     @Test

@@ -32,6 +32,7 @@
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/Invoice.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/InvoiceLineItem.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/License.java
+/Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/OrgInstance.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/OrgServiceSubscription.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/Organization.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/domain/Partner.java
@@ -61,6 +62,7 @@
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/InvoiceLineItemRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/InvoiceRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/LicenseRepository.java
+/Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/OrgInstanceRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/OrgServiceSubscriptionRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/OrganizationRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/PartnerRepository.java
