@@ -42,6 +42,13 @@ public class License {
     private String imageDigest;
     private Integer graceDays;
 
+    /**
+     * Topology entitlement carried into the bundle so the org can self-enforce it (a SINGLE_NODE license
+     * booting under K8s/ECS locks locally, even if telemetry is blocked). Stamped from the org at issue.
+     */
+    private String deploymentTier;
+    private Integer maxInstances;
+
     @Column(columnDefinition = "TEXT")
     private String features; // JSON
 

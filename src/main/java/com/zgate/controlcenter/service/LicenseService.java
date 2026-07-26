@@ -71,6 +71,8 @@ public class LicenseService {
             .maxVersion(maxVersion)
             .imageDigest(req.getImageDigest())
             .graceDays(req.getGraceDays())
+            .deploymentTier(org.getDeploymentTier() != null ? org.getDeploymentTier().name() : null)
+            .maxInstances(org.getMaxInstances())
             .activatedAt(LocalDateTime.now())
             .issuedBy(issuedBy)
             .build());
@@ -131,6 +133,9 @@ public class LicenseService {
         if (org.getEntitledVersion() != null && !org.getEntitledVersion().isBlank()) {
             l.setMaxVersion(org.getEntitledVersion()); // pick up any version-entitlement change
         }
+        // Refresh topology entitlement too, so a tier/seat change flows out on the next renewal.
+        l.setDeploymentTier(org.getDeploymentTier() != null ? org.getDeploymentTier().name() : null);
+        l.setMaxInstances(org.getMaxInstances());
         // Regenerate the signed bundle so the org picks up the extended expiry on its next poll.
         if (signingService.isSigningAvailable()) {
             l.setBundleJson(signingService.generateSignedBundle(l, org.getName()));
@@ -188,6 +193,8 @@ public class LicenseService {
                 .maxVersion(maxVersion)
                 .imageDigest(req.imageDigest())
                 .graceDays(req.graceDays())
+                .deploymentTier(org.getDeploymentTier() != null ? org.getDeploymentTier().name() : null)
+                .maxInstances(org.getMaxInstances())
                 .activatedAt(LocalDateTime.now())
                 .issuedBy(issuedBy)
                 .build());

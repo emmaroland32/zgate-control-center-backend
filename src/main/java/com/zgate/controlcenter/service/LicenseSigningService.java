@@ -184,6 +184,12 @@ public class LicenseSigningService {
         if (license.getGraceDays() != null) {
             payload.put("graceDays", license.getGraceDays());
         }
+        if (license.getDeploymentTier() != null && !license.getDeploymentTier().isBlank()) {
+            payload.put("deploymentTier", license.getDeploymentTier());
+        }
+        if (license.getMaxInstances() != null) {
+            payload.put("maxInstances", license.getMaxInstances());
+        }
     }
 
     private Map<String, Object> buildModuleEntry(License license) {
