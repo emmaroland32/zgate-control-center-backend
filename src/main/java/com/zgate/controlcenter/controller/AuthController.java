@@ -5,10 +5,8 @@ import com.zgate.controlcenter.security.JwtUtils;
 import com.zgate.controlcenter.service.ControlCenterUserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -27,14 +25,10 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
-        Authentication auth;
-        try {
-            auth = authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
-        } catch (BadCredentialsException ex) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("code", 401, "message", "Invalid email or password"));
-        }
+        // Let BadCredentialsException propagate to GlobalExceptionHandler so login errors use the
+        // same coded envelope as the rest of the API (401 INVALID_CREDENTIALS), not a hand-built body.
+        Authentication auth = authManager.authenticate(
+            new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
 
         String role = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
