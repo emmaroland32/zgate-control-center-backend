@@ -8,13 +8,15 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * One live ZGATE install of an organization, identified by the machine fingerprint it reports on each
- * telemetry heartbeat. Counting the rows seen within a recent window = how many installs are running
- * for that org; more than the org's entitled {@code maxInstances} means a copied / over-deployed license.
+ * One live ZGATE node (pod / task / process) of an organization, keyed on
+ * {@code (organizationId, fingerprint, nodeId)}. Distinct fingerprints = separate deployments /
+ * environments; distinct node ids under one fingerprint = replicas of one deployment (K8s/ECS scale).
+ * Refreshed on each telemetry heartbeat, so counting rows within a window reveals the live topology.
  */
 @Entity
 @Table(name = "org_instances",
-       uniqueConstraints = @UniqueConstraint(name = "uq_org_instance", columnNames = {"organizationId", "fingerprint"}))
+       uniqueConstraints = @UniqueConstraint(name = "uq_org_instance_node",
+               columnNames = {"organizationId", "fingerprint", "nodeId"}))
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class OrgInstance {
 
@@ -24,8 +26,16 @@ public class OrgInstance {
     @Column(nullable = false)
     private UUID organizationId;
 
+    /** Deployment identity (DB/environment) — shared by all replicas of one install. */
     @Column(nullable = false)
     private String fingerprint;
+
+    /** Per-node identity (pod name / container id / process) — distinct per replica. */
+    @Column(nullable = false)
+    private String nodeId;
+
+    /** Reported orchestrator: bare | docker | kubernetes | ecs. */
+    private String platform;
 
     private String appVersion;
 

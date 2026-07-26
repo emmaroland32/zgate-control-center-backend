@@ -50,6 +50,7 @@
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/payload/request/IssueLicenseRequest.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/payload/request/LoginRequest.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/payload/request/PushUpdateRequest.java
+/Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/payload/request/UpdateEntitlementRequest.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/AlertRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/AlertRuleRepository.java
 /Users/siyanda/Repository/eradiux/ZGATE/control-center/backend/src/main/java/com/zgate/controlcenter/repository/ApiKeyRepository.java

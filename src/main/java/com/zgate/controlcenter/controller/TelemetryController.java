@@ -38,8 +38,10 @@ public class TelemetryController {
     public ResponseEntity<Void> ingest(
             @RequestHeader("X-Control-Center-Org-Id") UUID orgId,
             @RequestHeader(value = "X-Control-Center-Fingerprint", required = false) String fingerprint,
+            @RequestHeader(value = "X-Control-Center-Node-Id", required = false) String nodeId,
+            @RequestHeader(value = "X-Control-Center-Platform", required = false) String platform,
             @RequestBody List<TelemetryEvent> events) {
-        service.ingest(orgId, events, fingerprint);
+        service.ingest(orgId, events, fingerprint, nodeId, platform);
         return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 

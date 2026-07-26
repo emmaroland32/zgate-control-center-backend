@@ -151,41 +151,87 @@ class AnomalyDetectionTest {
     }
 
     @Test
-    @DisplayName("more live installs than entitled → MULTIPLE_INSTANCES (copy detected even if unbound)")
+    @DisplayName("more live environments than entitled → MULTIPLE_INSTANCES (copy detected even if unbound)")
     void overDeployedFlagged() {
         Organization o = org(null, null);
         o.setMaxInstances(1);
-        when(instanceRepo.countByOrganizationIdAndLastSeenAtAfter(eq(o.getId()), any())).thenReturn(2L);
+        when(instanceRepo.countDistinctFingerprints(eq(o.getId()), any())).thenReturn(2L);
         List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2");
         assertThat(raised).extracting(TelemetryEvent::getErrorCode).contains("MULTIPLE_INSTANCES");
     }
 
     @Test
-    @DisplayName("live installs within entitlement → no MULTIPLE_INSTANCES (e.g. prod + DR)")
+    @DisplayName("live environments within entitlement → no MULTIPLE_INSTANCES (e.g. prod + DR)")
     void withinInstanceLimitOk() {
         Organization o = org(null, null);
         o.setMaxInstances(2);
-        when(instanceRepo.countByOrganizationIdAndLastSeenAtAfter(eq(o.getId()), any())).thenReturn(2L);
+        when(instanceRepo.countDistinctFingerprints(eq(o.getId()), any())).thenReturn(2L);
         assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2")).isEmpty();
     }
 
     @Test
-    @DisplayName("unmanaged org (maxInstances null) is never flagged for concurrent use")
+    @DisplayName("unmanaged org (maxInstances + tier null) raises nothing for topology")
     void unmanagedInstancesNotFlagged() {
-        Organization o = org(null, null); // maxInstances null
-        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2");
-        assertThat(raised).isEmpty();
-        // the count query is never even consulted for an unmanaged org
-        org.mockito.Mockito.verify(instanceRepo, org.mockito.Mockito.never())
-            .countByOrganizationIdAndLastSeenAtAfter(any(), any());
+        Organization o = org(null, null); // maxInstances + deploymentTier null
+        when(instanceRepo.countDistinctFingerprints(eq(o.getId()), any())).thenReturn(5L);
+        assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP-MACHINE-2")).isEmpty();
     }
 
     @Test
-    @DisplayName("each heartbeat records/refreshes the reporting install in the registry")
+    @DisplayName("each heartbeat records/refreshes the reporting node in the registry")
     void heartbeatRecordsInstance() {
         Organization o = org(null, null);
-        svc.inspect(o, heartbeat("1.2.3"), "FP-MACHINE-1");
+        svc.inspect(o, heartbeat("1.2.3"), "FP-MACHINE-1", "pod-1", "kubernetes");
         org.mockito.Mockito.verify(instanceRepo).save(any());
+    }
+
+    // ---- deployment-tier (K8s/ECS/failover pricing) ----
+
+    private Organization tieredOrg(Organization.DeploymentTier tier) {
+        Organization o = org(null, null);
+        o.setDeploymentTier(tier);
+        return o;
+    }
+
+    @Test
+    @DisplayName("SINGLE_NODE tier running on Kubernetes → HA_NOT_ENTITLED")
+    void k8sOnSingleNodeFlagged() {
+        Organization o = tieredOrg(Organization.DeploymentTier.SINGLE_NODE);
+        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP", "pod-1", "kubernetes");
+        assertThat(raised).extracting(TelemetryEvent::getErrorCode).contains("HA_NOT_ENTITLED");
+    }
+
+    @Test
+    @DisplayName("SINGLE_NODE tier with multiple replica nodes → HA_NOT_ENTITLED")
+    void replicasOnSingleNodeFlagged() {
+        Organization o = tieredOrg(Organization.DeploymentTier.SINGLE_NODE);
+        when(instanceRepo.maxNodesPerFingerprint(eq(o.getId()), any())).thenReturn(3L);
+        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP", "node-a", "bare");
+        assertThat(raised).extracting(TelemetryEvent::getErrorCode).contains("HA_NOT_ENTITLED");
+    }
+
+    @Test
+    @DisplayName("HIGH_AVAILABILITY tier on Kubernetes → allowed")
+    void k8sOnHaAllowed() {
+        Organization o = tieredOrg(Organization.DeploymentTier.HIGH_AVAILABILITY);
+        assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP", "pod-1", "kubernetes")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("HIGH_AVAILABILITY tier running in two environments → FAILOVER_NOT_ENTITLED")
+    void multiEnvOnHaFlagged() {
+        Organization o = tieredOrg(Organization.DeploymentTier.HIGH_AVAILABILITY);
+        when(instanceRepo.countDistinctFingerprints(eq(o.getId()), any())).thenReturn(2L);
+        List<TelemetryEvent> raised = svc.inspect(o, heartbeat("1.0.0"), "FP-ENV2", "pod-1", "kubernetes");
+        assertThat(raised).extracting(TelemetryEvent::getErrorCode).contains("FAILOVER_NOT_ENTITLED");
+    }
+
+    @Test
+    @DisplayName("MULTI_REGION tier across two environments → allowed")
+    void multiEnvOnMultiRegionAllowed() {
+        Organization o = tieredOrg(Organization.DeploymentTier.MULTI_REGION);
+        when(instanceRepo.countDistinctFingerprints(eq(o.getId()), any())).thenReturn(2L);
+        assertThat(svc.inspect(o, heartbeat("1.0.0"), "FP-ENV2", "pod-1", "kubernetes")).isEmpty();
     }
 
     @Test

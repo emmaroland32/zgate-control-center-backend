@@ -63,20 +63,26 @@ public class AnomalyDetectionService {
     @Value("${controlcenter.anomaly.versionGranularity:minor}")
     private String versionGranularity;
 
-    /** @see #inspect(Organization, List, String) — no fingerprint reported. */
+    /** @see #inspect(Organization, List, String, String, String) — nothing topology-related reported. */
     public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events) {
-        return inspect(org, events, null);
+        return inspect(org, events, null, null, null);
+    }
+
+    /** @see #inspect(Organization, List, String, String, String) — fingerprint only. */
+    public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events, String reportedFingerprint) {
+        return inspect(org, events, reportedFingerprint, null, null);
     }
 
     /**
      * Inspect a telemetry batch from {@code org} and raise any entitlement anomalies. Also refreshes
      * {@code org.deployedVersion} from the reported build. Returns the anomalies raised (persisted).
      *
-     * @param reportedFingerprint the machine fingerprint the instance reported (header), used to detect
-     *                            a copied license (a fingerprint that differs from the one the org's
-     *                            license is bound to); null when not reported.
+     * @param reportedFingerprint the deployment fingerprint (header) — copied-license + concurrent-use
+     * @param nodeId              per-node identity (header) — lets us count replicas of one deployment
+     * @param platform            reported orchestrator (header): bare|docker|kubernetes|ecs
      */
-    public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events, String reportedFingerprint) {
+    public List<TelemetryEvent> inspect(Organization org, List<TelemetryEvent> events,
+                                        String reportedFingerprint, String nodeId, String platform) {
         if (!enabled || org == null) return List.of();
 
         LocalDateTime now = LocalDateTime.now();
@@ -105,7 +111,7 @@ public class AnomalyDetectionService {
                     + org.getSubscriptionValidUntil() + ".", now, raised);
         }
 
-        // 3. Copied license, two complementary signals:
+        // 3. Copied license + deployment-topology signals (all keyed off the reported fingerprint).
         if (reportedFingerprint != null && !reportedFingerprint.isBlank()) {
             // (a) Wrong-machine: reported fingerprint != the one the org's license is bound to.
             String bound = boundFingerprint(org.getId());
@@ -115,18 +121,23 @@ public class AnomalyDetectionService {
                     now, raised);
             }
 
-            // (b) Too-many-machines: record this install and flag if more distinct installs are live
-            // than the org is entitled to. Catches copies even when the license is unbound.
-            recordInstance(org.getId(), reportedFingerprint, reportedVersion, now);
-            if (org.getMaxInstances() != null) {
-                long live = instanceRepo.countByOrganizationIdAndLastSeenAtAfter(
-                    org.getId(), now.minusHours(Math.max(1, instanceWindowHours)));
-                if (live > org.getMaxInstances()) {
-                    raise(org, "MULTIPLE_INSTANCES",
-                        live + " live installs detected but only " + org.getMaxInstances()
-                            + " entitled — possible copied / over-deployed license.", now, raised);
-                }
+            // Record this node. Fall back to the fingerprint as the node id when none was reported
+            // (an older/single-node instance) so it still counts as exactly one node.
+            String node = (nodeId != null && !nodeId.isBlank()) ? nodeId : reportedFingerprint;
+            recordInstance(org.getId(), reportedFingerprint, node, platform, reportedVersion, now);
+
+            LocalDateTime since = now.minusHours(Math.max(1, instanceWindowHours));
+
+            // (b) Too-many-environments vs the paid seat count (copied / over-deployed license).
+            long environments = instanceRepo.countDistinctFingerprints(org.getId(), since);
+            if (org.getMaxInstances() != null && environments > org.getMaxInstances()) {
+                raise(org, "MULTIPLE_INSTANCES",
+                    environments + " live deployments detected but only " + org.getMaxInstances()
+                        + " entitled — possible copied / over-deployed license.", now, raised);
             }
+
+            // (c) Deployment-tier: observed topology beyond what the org's tier permits.
+            evaluateTopology(org, since, environments, platform, raised, now);
         }
 
         // Reflect any fresh anomaly on the dashboard without clobbering a stronger status.
@@ -163,14 +174,43 @@ public class AnomalyDetectionService {
             orgId, LocalDateTime.now().minusHours(Math.max(1, instanceWindowHours)));
     }
 
-    /** Upsert the reporting install into the instance registry, refreshing its last-seen timestamp. */
-    private void recordInstance(java.util.UUID orgId, String fingerprint, String appVersion, LocalDateTime now) {
-        OrgInstance inst = instanceRepo.findByOrganizationIdAndFingerprint(orgId, fingerprint)
+    /** Upsert the reporting node into the registry, refreshing its last-seen timestamp + platform. */
+    private void recordInstance(java.util.UUID orgId, String fingerprint, String nodeId, String platform,
+                                String appVersion, LocalDateTime now) {
+        OrgInstance inst = instanceRepo.findByOrganizationIdAndFingerprintAndNodeId(orgId, fingerprint, nodeId)
             .orElseGet(() -> OrgInstance.builder()
-                .organizationId(orgId).fingerprint(fingerprint).firstSeenAt(now).build());
+                .organizationId(orgId).fingerprint(fingerprint).nodeId(nodeId).firstSeenAt(now).build());
         inst.setLastSeenAt(now);
+        if (platform != null && !platform.isBlank()) inst.setPlatform(platform);
         if (appVersion != null && !appVersion.isBlank()) inst.setAppVersion(appVersion);
         instanceRepo.save(inst);
+    }
+
+    /**
+     * Deployment-tier enforcement. The observed topology must not exceed what the org has paid for:
+     *   HA_NOT_ENTITLED  — orchestrated (K8s/ECS) or multi-replica, but the tier is SINGLE_NODE.
+     *   FAILOVER_NOT_ENTITLED — running in more than one environment, but the tier is below MULTI_REGION.
+     * Skipped for unmanaged orgs (deploymentTier == null).
+     */
+    private void evaluateTopology(Organization org, LocalDateTime since, long environments, String platform,
+                                  List<TelemetryEvent> raised, LocalDateTime now) {
+        Organization.DeploymentTier tier = org.getDeploymentTier();
+        if (tier == null) return; // unmanaged
+
+        boolean orchestrated = ("kubernetes".equalsIgnoreCase(platform) || "ecs".equalsIgnoreCase(platform))
+            || instanceRepo.hasOrchestratedNode(org.getId(), since)
+            || instanceRepo.maxNodesPerFingerprint(org.getId(), since) > 1;
+        if (orchestrated && tier.ordinal() < Organization.DeploymentTier.HIGH_AVAILABILITY.ordinal()) {
+            raise(org, "HA_NOT_ENTITLED",
+                "Deployment is running orchestrated / multi-replica (" + (platform != null ? platform : "scaled")
+                    + ") but is licensed SINGLE_NODE — a High-Availability tier is required.", now, raised);
+        }
+
+        if (environments > 1 && tier.ordinal() < Organization.DeploymentTier.MULTI_REGION.ordinal()) {
+            raise(org, "FAILOVER_NOT_ENTITLED",
+                environments + " separate environments detected (failover/DR) but the tier is " + tier
+                    + " — a Multi-Region tier is required.", now, raised);
+        }
     }
 
     /** The fingerprint the org's active license is bound to, or null if unbound / no active license. */

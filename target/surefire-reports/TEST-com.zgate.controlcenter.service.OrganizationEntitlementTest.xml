@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.068" tests="19" errors="0" skipped="0" failures="0" flakes="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.zgate.controlcenter.service.OrganizationEntitlementTest" time="0.003" tests="2" errors="0" skipped="0" failures="0" flakes="0">
   <properties>
     <property name="java.specification.version" value="25"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -62,44 +62,6 @@
     <property name="socksNonProxyHosts" value="local|*.local|169.254/16|*.169.254/16"/>
     <property name="java.class.version" value="69.0"/>
   </properties>
-  <testcase name="unmanagedOrgNeverFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.043"/>
-  <testcase name="deployedVersionRefreshed" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="multiEnvOnHaFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.004">
-    <system-out><![CDATA[10:10:15.249 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [FAILOVER_NOT_ENTITLED] org=6510ea23-0c63-4da7-9b7f-5310744e8fd7: 2 separate environments detected (failover/DR) but the tier is HIGH_AVAILABILITY — a Multi-Region tier is required.
-]]></system-out>
-  </testcase>
-  <testcase name="lapsedSubscriptionFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.002">
-    <system-out><![CDATA[10:10:15.252 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [RUNNING_WHILE_UNENTITLED] org=2ed74f8b-f493-4780-842a-caf8b6b7485e: Deployment is still active but its subscription lapsed on 2026-07-25T10:10:15.252504.
-]]></system-out>
-  </testcase>
-  <testcase name="replicasOnSingleNodeFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001">
-    <system-out><![CDATA[10:10:15.254 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [HA_NOT_ENTITLED] org=d3ad9f90-2957-4f34-b480-4cafb9a9a643: Deployment is running orchestrated / multi-replica (bare) but is licensed SINGLE_NODE — a High-Availability tier is required.
-]]></system-out>
-  </testcase>
-  <testcase name="overDeployedFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.002">
-    <system-out><![CDATA[10:10:15.255 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [MULTIPLE_INSTANCES] org=7f7004df-b934-4d11-9275-65be01b23135: 2 live deployments detected but only 1 entitled — possible copied / over-deployed license.
-]]></system-out>
-  </testcase>
-  <testcase name="disabledDoesNothing" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="dedupeSuppressesRepeat" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="overVersionFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001">
-    <system-out><![CDATA[10:10:15.259 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [VERSION_BEYOND_ENTITLEMENT] org=9953a351-9b96-4ed5-9348-83c928493757: Deployment is running 2.0.0 but is only entitled to 1.0.0.
-]]></system-out>
-  </testcase>
-  <testcase name="unboundLicenseNotFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.0"/>
-  <testcase name="k8sOnSingleNodeFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001">
-    <system-out><![CDATA[10:10:15.261 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [HA_NOT_ENTITLED] org=a4d29670-0f6a-471e-8ea2-95a94b1bc316: Deployment is running orchestrated / multi-replica (kubernetes) but is licensed SINGLE_NODE — a High-Availability tier is required.
-]]></system-out>
-  </testcase>
-  <testcase name="k8sOnHaAllowed" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.0"/>
-  <testcase name="heartbeatRecordsInstance" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="copiedLicenseFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001">
-    <system-out><![CDATA[10:10:15.264 [main] WARN com.zgate.controlcenter.service.AnomalyDetectionService -- LICENSE ANOMALY [FINGERPRINT_MISMATCH] org=9ba2eb0d-95dc-47aa-bf85-06d331456529: Reported machine fingerprint does not match the license binding — possible copied license.
-]]></system-out>
-  </testcase>
-  <testcase name="unmanagedInstancesNotFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="withinInstanceLimitOk" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="multiEnvOnMultiRegionAllowed" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="patchBumpNotFlagged" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
-  <testcase name="matchingFingerprintOk" classname="com.zgate.controlcenter.service.AnomalyDetectionTest" time="0.001"/>
+  <testcase name="setsEntitlements" classname="com.zgate.controlcenter.service.OrganizationEntitlementTest" time="0.001"/>
+  <testcase name="nullClearsEntitlements" classname="com.zgate.controlcenter.service.OrganizationEntitlementTest" time="0.001"/>
 </testsuite>

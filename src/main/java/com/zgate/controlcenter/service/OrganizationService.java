@@ -85,6 +85,19 @@ public class OrganizationService {
         orgRepo.save(org);
     }
 
+    /** Set the org's commercial entitlements (subscription, entitled version, seats, deployment tier). */
+    @CacheEvict(value = "organizations", allEntries = true)
+    public Organization updateEntitlement(UUID id,
+            com.zgate.controlcenter.payload.request.UpdateEntitlementRequest req) {
+        Organization org = findById(id);
+        org.setSubscriptionValidUntil(req.getSubscriptionValidUntil());
+        org.setEntitledVersion(req.getEntitledVersion());
+        org.setLicenseTtlDays(req.getLicenseTtlDays());
+        org.setMaxInstances(req.getMaxInstances());
+        org.setDeploymentTier(req.getDeploymentTier());
+        return orgRepo.save(org);
+    }
+
     public DashboardSummary getDashboardSummary() {
         long total = orgRepo.count();
         long healthy = orgRepo.countByDeploymentStatus(Organization.DeploymentStatus.HEALTHY);

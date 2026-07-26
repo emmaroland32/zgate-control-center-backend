@@ -70,6 +70,16 @@ public class Organization {
      */
     private Integer maxInstances;
 
+    /**
+     * Entitled deployment topology — the licensing tier for how the software is run:
+     *   SINGLE_NODE       — one process, one environment (base price)
+     *   HIGH_AVAILABILITY — orchestrated / horizontally scaled (Kubernetes, ECS, multiple replicas)
+     *   MULTI_REGION      — plus failover / DR across separate environments
+     * Observed topology beyond the entitled tier raises an anomaly. NULL = unmanaged (no tier check).
+     */
+    @Enumerated(EnumType.STRING)
+    private DeploymentTier deploymentTier;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -82,4 +92,7 @@ public class Organization {
     public enum Tier             { FREE, STARTER, STANDARD, ENTERPRISE }
     public enum DeploymentStatus { HEALTHY, DEGRADED, OFFLINE, PROVISIONING, SUSPENDED }
     public enum DeploymentEnv    { LOCAL, STAGING, PRODUCTION }
+
+    /** Licensed deployment topology, cheapest → most expensive. Ordinal order encodes entitlement rank. */
+    public enum DeploymentTier   { SINGLE_NODE, HIGH_AVAILABILITY, MULTI_REGION }
 }

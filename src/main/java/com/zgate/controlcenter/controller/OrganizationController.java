@@ -2,6 +2,7 @@ package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.domain.Organization;
 import com.zgate.controlcenter.payload.request.CreateOrganizationRequest;
+import com.zgate.controlcenter.payload.request.UpdateEntitlementRequest;
 import com.zgate.controlcenter.service.AuditService;
 import com.zgate.controlcenter.service.OrganizationService;
 import jakarta.validation.Valid;
@@ -62,5 +63,24 @@ public class OrganizationController {
                                              @RequestParam Organization.DeploymentStatus status) {
         service.updateStatus(id, status);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Set the org's commercial entitlements — subscription (kill switch), entitled version, seat count,
+     * and deployment tier (K8s/ECS/failover pricing). Admin-only and audited; the current values are
+     * readable via {@code GET /{id}} and live nodes via {@code GET /api/v1/deployments/org/{id}/instances}.
+     */
+    @PatchMapping("/{id}/entitlements")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    public ResponseEntity<Organization> updateEntitlements(@PathVariable UUID id,
+                                                           @RequestBody UpdateEntitlementRequest req,
+                                                           @AuthenticationPrincipal UserDetails user) {
+        Organization org = service.updateEntitlement(id, req);
+        audit.log(user.getUsername(), user.getUsername(), "ORG_ENTITLEMENT_UPDATED", "Organization",
+            id.toString(), id, null,
+            "tier=" + org.getDeploymentTier() + ", subValidUntil=" + org.getSubscriptionValidUntil()
+                + ", entitledVersion=" + org.getEntitledVersion() + ", maxInstances=" + org.getMaxInstances(),
+            com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
+        return ResponseEntity.ok(org);
     }
 }
