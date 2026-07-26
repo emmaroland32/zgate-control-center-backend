@@ -12,4 +12,5 @@ public interface AlertRepository extends JpaRepository<Alert, UUID> {
     List<Alert> findByStatusIn(List<Alert.Status> statuses);
     List<Alert> findByOrganizationIdAndStatus(UUID orgId, Alert.Status status);
     long countBySeverityAndStatus(AlertRule.Severity severity, Alert.Status status);
+    List<Alert> findByRuleIdAndStatusIn(UUID ruleId, List<Alert.Status> statuses);
 }
