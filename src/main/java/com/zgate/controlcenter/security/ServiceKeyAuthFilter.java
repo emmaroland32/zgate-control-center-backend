@@ -40,7 +40,8 @@ public class ServiceKeyAuthFilter extends OncePerRequestFilter {
             "/api/v1/licenses/bundle",
             "/api/v1/licenses/status-report",
             "/api/v1/deployments/pull-token",
-            "/api/v1/shared-services/track");
+            "/api/v1/shared-services/track",
+            "/api/v1/backups");   // managed-backup agent (initiate/complete/fail/list/restore-url)
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

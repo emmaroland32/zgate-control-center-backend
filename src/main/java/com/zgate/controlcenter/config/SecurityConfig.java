@@ -60,6 +60,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/licenses/bundle").permitAll()       // org bundle pull
                 .requestMatchers("/api/v1/licenses/status-report").permitAll() // org activation callback
                 .requestMatchers("/api/v1/deployments/pull-token").permitAll() // org image-pull authorization
+                .requestMatchers("/api/v1/backups/**").permitAll()            // managed-backup agent (service-key gated)
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
