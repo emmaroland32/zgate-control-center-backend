@@ -198,6 +198,23 @@ public class BackupService {
         return new OrgBackupUsage(used, quota, completed, plan != null && plan.isActive(), charge, currency);
     }
 
+    /** An invoice line item for the org's backup charge (base + stored GiB × rate), or null to skip. */
+    public record BackupChargeLine(String description, long quantity, BigDecimal unitPrice, BigDecimal totalPrice) {}
+
+    @Transactional(readOnly = true)
+    public BackupChargeLine monthlyChargeLine(UUID orgId) {
+        BackupPlan plan = planRepo.findByOrganizationId(orgId).orElse(null);
+        if (plan == null || !plan.isEnabled()) return null;
+        long used = recordRepo.sumCompletedSizeBytes(orgId);
+        BigDecimal storedGib = BigDecimal.valueOf(used).divide(BigDecimal.valueOf(GIB), 4, RoundingMode.HALF_UP);
+        BigDecimal total = plan.getPricePerMonth()
+                .add(storedGib.multiply(plan.getPricePerGbMonth()))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (total.signum() <= 0) return null;
+        return new BackupChargeLine(
+                String.format("Managed backup subscription (%.2f GB stored)", storedGib), 1L, total, total);
+    }
+
     @Transactional(readOnly = true)
     public FleetBackupStats fleetStats() {
         List<BackupPlan> plans = planRepo.findAll();

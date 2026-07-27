@@ -32,6 +32,7 @@ public class BillingService {
     private final SharedServiceRepository serviceRepo;
     private final OrganizationRepository orgRepo;
     private final JavaMailSender mailSender;
+    private final BackupService backupService;
 
     @Value("${controlcenter.billing.taxRate:0.15}")
     private BigDecimal taxRate;
@@ -65,13 +66,17 @@ public class BillingService {
         List<ServiceUsage> usages = usageRepo.findByOrganizationIdAndPeriodStartBetween(
             orgId, periodStart, periodEnd);
 
-        if (usages.isEmpty()) {
+        // Managed-backup subscription charge (base + stored GiB) for this org, if any.
+        BackupService.BackupChargeLine backup = backupService.monthlyChargeLine(orgId);
+
+        if (usages.isEmpty() && backup == null) {
             throw new ControlCenterException("No usage found for billing period");
         }
 
         BigDecimal subtotal = usages.stream()
             .map(ServiceUsage::getCostUsd)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .add(backup != null ? backup.totalPrice() : BigDecimal.ZERO);
 
         BigDecimal taxAmount = subtotal.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = subtotal.add(taxAmount);
@@ -102,6 +107,17 @@ public class BillingService {
                 .unitPrice(svc.getPricePerCall())
                 .totalPrice(usage.getCostUsd().setScale(2, RoundingMode.HALF_UP))
                 .serviceId(svc.getId())
+                .build());
+        }
+
+        // Managed-backup line item (base subscription + metered storage).
+        if (backup != null) {
+            lineItemRepo.save(InvoiceLineItem.builder()
+                .invoiceId(invoice.getId())
+                .description(backup.description())
+                .quantity(backup.quantity())
+                .unitPrice(backup.unitPrice())
+                .totalPrice(backup.totalPrice())
                 .build());
         }
 
