@@ -129,6 +129,18 @@ public class BackupService {
         storage.delete(rec.getS3Key());
     }
 
+    /** Agent reports whether a completed backup proved restorable (decrypt + pg_restore --list). */
+    @Transactional
+    public BackupRecord recordVerification(UUID orgId, UUID backupId, boolean verified, String error) {
+        BackupRecord rec = ownedRecord(orgId, backupId);
+        rec.setVerified(verified);
+        rec.setVerifiedAt(LocalDateTime.now());
+        rec.setVerifyError(verified ? null : (error != null && error.length() > 500 ? error.substring(0, 500) : error));
+        recordRepo.save(rec);
+        log.info("Backup {} verification: {}", backupId, verified ? "OK" : "FAILED (" + error + ")");
+        return rec;
+    }
+
     @Transactional(readOnly = true)
     public List<BackupRecord> listForOrg(UUID orgId) {
         return recordRepo.findByOrganizationIdOrderByCreatedAtDesc(orgId);

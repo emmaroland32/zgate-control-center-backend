@@ -30,6 +30,7 @@ public class BackupAgentController {
     public record InitiateRequest(Long sizeBytes, String nodeId, String label) {}
     public record CompleteRequest(String sha256, Long sizeBytes) {}
     public record FailRequest(String reason) {}
+    public record VerifyReport(boolean verified, String error) {}
     public record RestoreResponse(String downloadUrl, LocalDateTime expiresAt) {}
 
     /** Reserve a backup slot (entitlement + quota checked) and get a presigned upload URL. */
@@ -49,6 +50,14 @@ public class BackupAgentController {
             @RequestBody(required = false) CompleteRequest req) {
         CompleteRequest r = req != null ? req : new CompleteRequest(null, null);
         return ResponseEntity.ok(backupService.complete(orgId, id, r.sha256(), r.sizeBytes()));
+    }
+
+    /** Report the result of verifying a completed backup (decrypt + pg_restore --list). */
+    @PostMapping("/{id}/verify-report")
+    @RawResponse
+    public ResponseEntity<BackupRecord> verifyReport(
+            @RequestHeader(ORG) UUID orgId, @PathVariable UUID id, @RequestBody VerifyReport req) {
+        return ResponseEntity.ok(backupService.recordVerification(orgId, id, req.verified(), req.error()));
     }
 
     /** Report a failed/aborted upload so the partial object is purged. */

@@ -54,6 +54,17 @@ public class BackupRecord {
     @Column(name = "failure_reason", length = 512)
     private String failureReason;
 
+    /** Proven restorable (agent decrypted it + pg_restore --list succeeded). */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean verified = false;
+
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
+    @Column(name = "verify_error", length = 512)
+    private String verifyError;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
