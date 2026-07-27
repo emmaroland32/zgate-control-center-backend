@@ -32,8 +32,13 @@ public class BackupStorageService {
     private final String region;
     private final Duration presignTtl;
 
-    /** SSE mode the presigned PUT bakes in; the agent must echo it as x-amz-server-side-encryption. */
-    private static final String SSE = ServerSideEncryption.AES256.toString();
+    /**
+     * Optional customer-managed KMS key id/ARN. Blank ⇒ SSE-S3 (AES256, current default). When set, the
+     * object is written with SSE-KMS under this key, giving per-tenant key access control and a CloudTrail
+     * audit record of every decrypt — a compliance win for the managed offering. The uploaded payload is
+     * already client-side encrypted regardless, so SSE is defense-in-depth either way.
+     */
+    private final String kmsKeyId;
 
     private volatile S3Presigner presigner;
     private volatile S3Client s3;
@@ -42,15 +47,22 @@ public class BackupStorageService {
             @Value("${controlcenter.backup.enabled:false}") boolean enabled,
             @Value("${controlcenter.backup.s3.bucket:}") String bucket,
             @Value("${controlcenter.backup.s3.region:eu-west-2}") String region,
+            @Value("${controlcenter.backup.s3.kmsKeyId:}") String kmsKeyId,
             @Value("${controlcenter.backup.presignTtlMinutes:30}") int presignTtlMinutes) {
         this.enabled = enabled;
         this.bucket = bucket == null ? "" : bucket.trim();
         this.region = region;
+        this.kmsKeyId = kmsKeyId == null ? "" : kmsKeyId.trim();
         this.presignTtl = Duration.ofMinutes(Math.max(1, presignTtlMinutes));
         if (isEnabled()) {
-            log.info("Managed backup storage enabled (bucket={}, region={}, presignTtl={}m)",
-                    this.bucket, region, presignTtlMinutes);
+            log.info("Managed backup storage enabled (bucket={}, region={}, presignTtl={}m, sse={})",
+                    this.bucket, region, presignTtlMinutes, usingKms() ? "aws:kms" : "AES256");
         }
+    }
+
+    /** True when a customer-managed KMS key is configured (SSE-KMS); otherwise SSE-S3. */
+    private boolean usingKms() {
+        return !kmsKeyId.isBlank();
     }
 
     /** Configured = feature flag on AND a bucket name present. */
@@ -72,17 +84,23 @@ public class BackupStorageService {
 
     public PresignedUpload presignedUpload(String key) {
         requireEnabled();
-        PutObjectRequest put = PutObjectRequest.builder()
-                .bucket(bucket).key(key)
-                .serverSideEncryption(ServerSideEncryption.AES256)
-                .build();
+        PutObjectRequest.Builder put = PutObjectRequest.builder().bucket(bucket).key(key);
+        // SSE is signed into the URL, so the agent MUST echo these headers on the PUT or S3 rejects it.
+        Map<String, String> requiredHeaders;
+        if (usingKms()) {
+            put.serverSideEncryption(ServerSideEncryption.AWS_KMS).ssekmsKeyId(kmsKeyId);
+            requiredHeaders = Map.of(
+                    "x-amz-server-side-encryption", ServerSideEncryption.AWS_KMS.toString(),
+                    "x-amz-server-side-encryption-aws-kms-key-id", kmsKeyId);
+        } else {
+            put.serverSideEncryption(ServerSideEncryption.AES256);
+            requiredHeaders = Map.of("x-amz-server-side-encryption", ServerSideEncryption.AES256.toString());
+        }
         String url = presigner().presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(presignTtl)
-                .putObjectRequest(put)
+                .putObjectRequest(put.build())
                 .build()).url().toString();
-        // SSE is signed into the URL, so the agent MUST send this header on the PUT or S3 rejects it.
-        return new PresignedUpload(url, Map.of("x-amz-server-side-encryption", SSE),
-                LocalDateTime.now().plus(presignTtl));
+        return new PresignedUpload(url, requiredHeaders, LocalDateTime.now().plus(presignTtl));
     }
 
     /** A presigned GET the agent uses to download ciphertext for a restore. */
