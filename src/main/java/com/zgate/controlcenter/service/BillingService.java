@@ -6,6 +6,7 @@ import com.zgate.controlcenter.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -71,6 +72,16 @@ public class BillingService {
 
         if (usages.isEmpty() && backup == null) {
             throw new ControlCenterException("No usage found for billing period");
+        }
+
+        // The backup amount is denominated in the plan's currency; the invoice is in defaultCurrency.
+        // Summing across currencies would silently corrupt the total, so refuse rather than mis-bill.
+        if (backup != null && backup.currency() != null
+                && !defaultCurrency.equalsIgnoreCase(backup.currency())) {
+            throw new ControlCenterException(
+                    "Backup plan currency (" + backup.currency() + ") does not match the invoice currency ("
+                            + defaultCurrency + ") for org " + orgId + "; align the plan currency before billing.",
+                    "BACKUP_CURRENCY_MISMATCH", HttpStatus.CONFLICT);
         }
 
         BigDecimal subtotal = usages.stream()

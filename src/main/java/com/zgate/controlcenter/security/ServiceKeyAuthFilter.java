@@ -43,12 +43,24 @@ public class ServiceKeyAuthFilter extends OncePerRequestFilter {
             "/api/v1/shared-services/track",
             "/api/v1/backups");   // managed-backup agent (initiate/complete/fail/list/restore-url)
 
+    /**
+     * Endpoints that ALWAYS require a valid service key, even when the global {@code enforce} flag is
+     * off. The opt-in default exists only for backward compatibility with installs that predate this
+     * filter; managed backup is a new feature with no such installs, and its endpoints are destructive
+     * and data-bearing (list metadata, download ciphertext, delete objects). A {@code permitAll} path
+     * whose only authentication is an opt-in filter would otherwise be wide open by default — so these
+     * are fail-closed unconditionally. The legitimate agent always sends the key.
+     */
+    private static final List<String> ALWAYS_ENFORCED = List.of("/api/v1/backups");
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
         boolean guarded = path != null && GUARDED.stream().anyMatch(path::startsWith);
-        if (!enforce || !guarded || "OPTIONS".equalsIgnoreCase(request.getMethod())) {
+        boolean alwaysEnforced = path != null && ALWAYS_ENFORCED.stream().anyMatch(path::startsWith);
+        boolean mustEnforce = guarded && (enforce || alwaysEnforced);
+        if (!mustEnforce || "OPTIONS".equalsIgnoreCase(request.getMethod())) {
             chain.doFilter(request, response);
             return;
         }

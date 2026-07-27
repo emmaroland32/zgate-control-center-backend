@@ -13,10 +13,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -119,14 +122,20 @@ public class BackupService {
         return rec;
     }
 
-    /** Mark a backup failed and best-effort purge any partial object. */
+    /** Mark an in-flight backup failed and purge its partial object. */
     @Transactional
     public void fail(UUID orgId, UUID backupId, String reason) {
         BackupRecord rec = ownedRecord(orgId, backupId);
+        // Only an in-flight upload may be failed+purged. Refusing any other state stops a caller from
+        // destroying a COMPLETED (good) backup's object through the fail path.
+        if (rec.getStatus() != BackupRecord.Status.INITIATED) {
+            throw new ControlCenterException("Only an in-progress backup can be failed (" + rec.getStatus() + ").",
+                    "BACKUP_BAD_STATE", HttpStatus.CONFLICT);
+        }
         rec.setStatus(BackupRecord.Status.FAILED);
         rec.setFailureReason(reason != null && reason.length() > 500 ? reason.substring(0, 500) : reason);
         recordRepo.save(rec);
-        storage.delete(rec.getS3Key());
+        deleteAfterCommit(List.of(rec.getS3Key()));   // purge only if the FAILED flip commits
     }
 
     /** Agent reports whether a completed backup proved restorable (decrypt + pg_restore --list). */
@@ -210,8 +219,13 @@ public class BackupService {
         return new OrgBackupUsage(used, quota, completed, plan != null && plan.isActive(), charge, currency);
     }
 
-    /** An invoice line item for the org's backup charge (base + stored GiB × rate), or null to skip. */
-    public record BackupChargeLine(String description, long quantity, BigDecimal unitPrice, BigDecimal totalPrice) {}
+    /**
+     * An invoice line item for the org's backup charge (base + stored GiB × rate), or null to skip.
+     * Carries the plan {@code currency} so the caller can reconcile it against the invoice currency
+     * before summing — the amount is meaningless without it.
+     */
+    public record BackupChargeLine(String description, long quantity, BigDecimal unitPrice,
+                                   BigDecimal totalPrice, String currency) {}
 
     @Transactional(readOnly = true)
     public BackupChargeLine monthlyChargeLine(UUID orgId) {
@@ -224,7 +238,8 @@ public class BackupService {
                 .setScale(2, RoundingMode.HALF_UP);
         if (total.signum() <= 0) return null;
         return new BackupChargeLine(
-                String.format("Managed backup subscription (%.2f GB stored)", storedGib), 1L, total, total);
+                String.format("Managed backup subscription (%.2f GiB stored)", storedGib), 1L, total, total,
+                plan.getCurrency());
     }
 
     @Transactional(readOnly = true)
@@ -241,19 +256,42 @@ public class BackupService {
 
     // ---- Retention ----
 
-    /** Hourly sweep: purge completed backups past their retention window from S3, mark EXPIRED. */
+    /** Hourly sweep: mark completed backups past their retention window EXPIRED, then purge from S3. */
     @Scheduled(fixedDelayString = "${controlcenter.backup.expirySweepMs:3600000}")
     @Transactional
     public void expireDueBackups() {
         if (!storage.isEnabled()) return;
         List<BackupRecord> due = recordRepo.findByStatusAndExpiresAtBefore(
                 BackupRecord.Status.COMPLETED, LocalDateTime.now());
+        if (due.isEmpty()) return;
+        List<String> keys = new ArrayList<>(due.size());
         for (BackupRecord rec : due) {
-            storage.delete(rec.getS3Key());
             rec.setStatus(BackupRecord.Status.EXPIRED);
             recordRepo.save(rec);
+            keys.add(rec.getS3Key());
         }
-        if (!due.isEmpty()) log.info("Expired {} backups past retention", due.size());
+        deleteAfterCommit(keys);   // delete from S3 only after the EXPIRED status is durably committed
+        log.info("Expiring {} backups past retention", due.size());
+    }
+
+    /**
+     * Delete S3 objects only after the current transaction commits, so an irreversible storage delete
+     * never runs ahead of the row that records it. If the transaction rolls back, nothing is deleted
+     * and the records stay COMPLETED (still restorable). A post-commit delete that itself fails leaves
+     * a harmless orphaned object ({@link BackupStorageService#delete} swallows errors) — strictly
+     * better than a COMPLETED record whose object is already gone. Runs inline if there is no active tx.
+     */
+    private void deleteAfterCommit(List<String> keys) {
+        if (keys == null || keys.isEmpty()) return;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() {
+                    for (String k : keys) storage.delete(k);
+                }
+            });
+        } else {
+            for (String k : keys) storage.delete(k);
+        }
     }
 
     private BackupRecord ownedRecord(UUID orgId, UUID backupId) {
