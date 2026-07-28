@@ -42,7 +42,7 @@ public class BackupService {
 
     // ---- Records the API exchanges ----
 
-    public record InitiateResult(UUID backupId, String s3Key, String uploadUrl,
+    public record InitiateResult(UUID backupId, String uploadUrl,
                                  Map<String, String> requiredHeaders, LocalDateTime expiresAt) {}
 
     public record OrgBackupUsage(long usedBytes, long quotaBytes, long completedCount,
@@ -100,7 +100,7 @@ public class BackupService {
 
         BackupStorageService.PresignedUpload up = storage.presignedUpload(s3Key);
         log.info("Backup initiated org={} id={} node={} (~{} bytes)", orgId, rec.getId(), nodeId, incoming);
-        return new InitiateResult(rec.getId(), s3Key, up.url(), up.requiredHeaders(), up.expiresAt());
+        return new InitiateResult(rec.getId(), up.url(), up.requiredHeaders(), up.expiresAt());
     }
 
     /** Confirm a successful upload: record size/checksum, stamp the retention window. */
@@ -256,22 +256,40 @@ public class BackupService {
 
     // ---- Retention ----
 
-    /** Hourly sweep: mark completed backups past their retention window EXPIRED, then purge from S3. */
+    /** Hours after which an INITIATED record whose upload never completed is reaped (quota reclaimed). */
+    private static final long STALE_INITIATED_HOURS = 24;
+
+    /**
+     * Hourly sweep: (1) mark completed backups past their retention window EXPIRED, and (2) reap
+     * INITIATED records whose upload never completed (agent crashed mid-upload) so they stop counting
+     * toward the quota and any partial S3 object is purged. All S3 deletes fire post-commit.
+     */
     @Scheduled(fixedDelayString = "${controlcenter.backup.expirySweepMs:3600000}")
     @Transactional
     public void expireDueBackups() {
         if (!storage.isEnabled()) return;
-        List<BackupRecord> due = recordRepo.findByStatusAndExpiresAtBefore(
-                BackupRecord.Status.COMPLETED, LocalDateTime.now());
-        if (due.isEmpty()) return;
-        List<String> keys = new ArrayList<>(due.size());
-        for (BackupRecord rec : due) {
+        LocalDateTime now = LocalDateTime.now();
+        List<String> keys = new ArrayList<>();
+
+        List<BackupRecord> expired = recordRepo.findByStatusAndExpiresAtBefore(BackupRecord.Status.COMPLETED, now);
+        for (BackupRecord rec : expired) {
             rec.setStatus(BackupRecord.Status.EXPIRED);
             recordRepo.save(rec);
             keys.add(rec.getS3Key());
         }
-        deleteAfterCommit(keys);   // delete from S3 only after the EXPIRED status is durably committed
-        log.info("Expiring {} backups past retention", due.size());
+
+        List<BackupRecord> stale = recordRepo.findByStatusAndCreatedAtBefore(
+                BackupRecord.Status.INITIATED, now.minusHours(STALE_INITIATED_HOURS));
+        for (BackupRecord rec : stale) {
+            rec.setStatus(BackupRecord.Status.FAILED);
+            rec.setFailureReason("Upload did not complete within " + STALE_INITIATED_HOURS + "h (reaped).");
+            recordRepo.save(rec);
+            keys.add(rec.getS3Key());
+        }
+
+        if (keys.isEmpty()) return;
+        deleteAfterCommit(keys);   // delete from S3 only after the status changes are durably committed
+        log.info("Backup sweep: {} expired past retention, {} stale INITIATED reaped", expired.size(), stale.size());
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.zgate.controlcenter.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.UuidGenerator;
@@ -29,6 +30,8 @@ public class BackupRecord {
     @Column(name = "node_id")
     private String nodeId;
 
+    /** Internal storage layout — never exposed over the agent/admin APIs. */
+    @JsonIgnore
     @Column(name = "s3_key", nullable = false, length = 512)
     private String s3Key;
 

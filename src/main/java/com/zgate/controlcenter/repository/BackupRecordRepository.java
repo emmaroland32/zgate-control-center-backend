@@ -33,4 +33,7 @@ public interface BackupRecordRepository extends JpaRepository<BackupRecord, UUID
 
     /** Completed backups whose retention window has elapsed — due for purge. */
     List<BackupRecord> findByStatusAndExpiresAtBefore(BackupRecord.Status status, LocalDateTime cutoff);
+
+    /** Records stuck in a status since before a cutoff — e.g. INITIATED uploads the agent never finished. */
+    List<BackupRecord> findByStatusAndCreatedAtBefore(BackupRecord.Status status, LocalDateTime cutoff);
 }
