@@ -43,7 +43,7 @@ public class ReportController {
             .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    @GetMapping("/export/pdf")
+    @GetMapping("/export/csv-detailed")
     public ResponseEntity<byte[]> exportPdf(@RequestParam(defaultValue = "summary") String type) {
         // No PDF renderer available — return CSV with correct content type
         String csv = reportService.exportCsv(type);

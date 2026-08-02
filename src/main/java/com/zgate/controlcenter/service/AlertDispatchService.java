@@ -129,6 +129,36 @@ public class AlertDispatchService {
         }
     }
 
+    /** Fire one webhook with a synthetic event so an operator can prove the endpoint works. */
+    public java.util.Map<String, Object> testDeliver(Webhook hook) {
+        long start = System.currentTimeMillis();
+        try {
+            if (!urlValidator.isDeliverable(hook.getUrl())) {
+                return java.util.Map.of("ok", false, "detail",
+                    "Refused: the URL must be an external https endpoint.");
+            }
+            HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(hook.getUrl()))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .header("X-ZGATE-Event", "TEST")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"event\":\"TEST\",\"message\":\"Control Center webhook test\"}"));
+            extraHeaders(hook).forEach(req::header);
+            HttpResponse<Void> resp = http.send(req.build(), HttpResponse.BodyHandlers.discarding());
+            int ms = (int) (System.currentTimeMillis() - start);
+            deliveryRepo.save(WebhookDelivery.builder()
+                .webhookId(hook.getId()).event("TEST").payload("manual test")
+                .statusCode(resp.statusCode()).durationMs(ms).build());
+            boolean ok = resp.statusCode() >= 200 && resp.statusCode() < 300;
+            return java.util.Map.of("ok", ok, "statusCode", resp.statusCode(), "durationMs", ms,
+                "detail", ok ? "Endpoint accepted the test event."
+                             : "Endpoint returned HTTP " + resp.statusCode() + ".");
+        } catch (Exception e) {
+            return java.util.Map.of("ok", false, "detail",
+                "Delivery failed: " + e.getClass().getSimpleName());
+        }
+    }
+
     private boolean sendWebhooks(Alert alert, String orgName) {
         boolean any = false;
         for (Webhook hook : webhookRepo.findByEnabled(true)) {
@@ -168,6 +198,9 @@ public class AlertDispatchService {
             hook.setLastFiredAt(LocalDateTime.now());
             hook.setLastStatus(status != null && status >= 200 && status < 300 ? "SUCCESS" : "FAILED");
             hook.setFireCount(hook.getFireCount() + 1);
+            if (status != null && status >= 200 && status < 300) {
+                hook.setSuccessCount(hook.getSuccessCount() + 1);
+            }
             webhookRepo.save(hook);
         }
         return any;

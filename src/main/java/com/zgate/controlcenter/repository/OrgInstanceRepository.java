@@ -17,6 +17,9 @@ public interface OrgInstanceRepository extends JpaRepository<OrgInstance, UUID> 
 
     List<OrgInstance> findByOrganizationIdAndLastSeenAtAfter(UUID organizationId, LocalDateTime since);
 
+    /** Every node reporting since a cutoff — the fleet's live resource picture. */
+    List<OrgInstance> findByLastSeenAtAfter(LocalDateTime since);
+
     /** Distinct deployments/environments (fingerprints) live since {@code since} — the failover axis. */
     @Query("SELECT COUNT(DISTINCT i.fingerprint) FROM OrgInstance i " +
            "WHERE i.organizationId = :orgId AND i.lastSeenAt > :since")

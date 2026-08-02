@@ -34,8 +34,10 @@ public class BillingController {
     }
 
     @GetMapping("/invoices")
-    public ResponseEntity<List<Invoice>> findAll() {
-        return ResponseEntity.ok(invoiceRepo.findAll());
+    public ResponseEntity<List<BillingService.InvoiceView>> findAll() {
+        // Returns the org NAME and the line items alongside each invoice: the console printed a raw
+        // UUID for the customer and rendered a permanently empty line-item table without them.
+        return ResponseEntity.ok(billingService.listInvoices());
     }
 
     /** Real per-org billing accounts (replaces the previously-fabricated Accounts tab). */
@@ -86,14 +88,16 @@ public class BillingController {
         return ResponseEntity.ok(billingService.cancel(id));
     }
 
-    @GetMapping("/invoices/{id}/pdf")
-    public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID id) {
+    /** CSV, and honestly named. This used to serve CSV bytes as application/pdf with a .pdf
+     *  filename, producing a file that would not open. */
+    @GetMapping("/invoices/{id}/csv")
+    public ResponseEntity<byte[]> downloadInvoiceCsv(@PathVariable UUID id) {
         Invoice invoice = invoiceRepo.findById(id)
             .orElseThrow(() -> new com.zgate.controlcenter.exception.ControlCenterException("Invoice not found: " + id));
         String csv = billingService.invoiceToCsv(invoice);
         return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=invoice-" + invoice.getInvoiceNumber() + ".pdf")
-            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=invoice-" + invoice.getInvoiceNumber() + ".csv")
+            .contentType(MediaType.parseMediaType("text/csv"))
             .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 

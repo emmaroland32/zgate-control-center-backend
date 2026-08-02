@@ -48,8 +48,9 @@ public class DeploymentController {
 
     @PostMapping("/push-update")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
-    @ResponseMessage(code = "UPDATE_PUSHED", value = "Update pushed")
-    public ResponseEntity<List<Deployment>> push(@Valid @RequestBody PushUpdateRequest req,
+    @ResponseMessage(code = "UPDATE_PUSHED",
+                     value = "Update scheduled as a fleet rollout — track it on the Fleet page")
+    public ResponseEntity<DeploymentService.PushResult> push(@Valid @RequestBody PushUpdateRequest req,
                                                   @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.pushUpdate(req, user.getUsername()));
     }

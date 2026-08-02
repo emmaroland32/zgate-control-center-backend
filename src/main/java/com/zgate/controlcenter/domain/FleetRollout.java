@@ -83,6 +83,13 @@ public class FleetRollout {
     @Builder.Default
     private int currentWave = 0;
 
+    /**
+     * Do not start before this time. Null = start on the next tick. This is what makes a scheduled
+     * update real: previously the deployments screen collected a time, stored it, and nothing ever
+     * read it — the row sat PENDING forever.
+     */
+    private LocalDateTime scheduledFor;
+
     @Column(nullable = false, length = 120)
     private String createdBy;
 

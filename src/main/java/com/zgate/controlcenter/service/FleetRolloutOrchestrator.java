@@ -82,6 +82,10 @@ public class FleetRolloutOrchestrator {
         // Maker-checker: a rollout awaiting a second operator's approval does not start.
         if (rollout.getApprovalStatus() == FleetRollout.ApprovalStatus.PENDING) return;
 
+        // A scheduled rollout waits for its window. Checked before anything else so a scheduled
+        // change cannot be pulled forward by an unrelated tick.
+        if (rollout.getScheduledFor() != null && LocalDateTime.now().isBefore(rollout.getScheduledFor())) return;
+
         if (rollout.getStatus() == FleetRollout.Status.PENDING) {
             rollout.setStatus(FleetRollout.Status.IN_PROGRESS);
             rolloutRepo.save(rollout);

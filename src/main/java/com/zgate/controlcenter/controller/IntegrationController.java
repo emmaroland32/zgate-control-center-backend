@@ -27,6 +27,7 @@ import java.util.UUID;
 public class IntegrationController {
 
     private final IntegrationService service;
+    private final com.zgate.controlcenter.service.AlertDispatchService dispatch;
 
     // ----------------------------------------------------------------
     // Webhooks
@@ -78,6 +79,13 @@ public class IntegrationController {
     public ResponseEntity<?> toggleWebhook(@PathVariable UUID id) {
         service.toggleWebhook(id);
         return ResponseEntity.ok(Map.of("id", id.toString()));
+    }
+
+    /** Fire a synthetic event at the endpoint so an operator can prove it works before relying on it. */
+    @PostMapping("/webhooks/{id}/test")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<Map<String, Object>> testWebhook(@PathVariable UUID id) {
+        return ResponseEntity.ok(dispatch.testDeliver(service.findWebhook(id)));
     }
 
     @DeleteMapping("/webhooks/{id}")

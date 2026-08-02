@@ -123,6 +123,7 @@ public class FleetRolloutService {
             .waveSize(waveSize)
             .autoApply(Boolean.TRUE.equals(req.getAutoApply()))
             .soakMinutes(req.getSoakMinutes() == null ? 15 : Math.max(0, req.getSoakMinutes()))
+            .scheduledFor(req.getScheduledFor())
             .createdBy(actor)
             .build());
 
@@ -268,5 +269,8 @@ public class FleetRolloutService {
         private Integer waveSize;
         private Boolean autoApply;
         private Integer soakMinutes;
+
+        /** Start no earlier than this. Null = start immediately. */
+        private java.time.LocalDateTime scheduledFor;
     }
 }

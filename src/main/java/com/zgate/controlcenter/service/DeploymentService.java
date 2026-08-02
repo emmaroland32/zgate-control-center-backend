@@ -26,6 +26,8 @@ public class DeploymentService {
     private final DeploymentRepository repo;
     private final OrganizationRepository orgRepo;
     private final ReleaseRepository releaseRepo;
+    private final com.zgate.controlcenter.repository.InfrastructureStackRepository stackRepo;
+    private final FleetRolloutService rolloutService;
 
     public Page<Deployment> findByOrg(UUID orgId, Pageable pageable) {
         return repo.findByOrganizationId(orgId, pageable);
@@ -39,33 +41,86 @@ public class DeploymentService {
         return repo.findById(id).orElseThrow(() -> new ControlCenterException("Deployment not found: " + id));
     }
 
+    /**
+     * Push a release to a set of organizations.
+     *
+     * <p>This used to write {@code Deployment} rows and nothing else — the "Push Update" button
+     * changed no infrastructure, contacted no instance, and a scheduled push sat PENDING forever
+     * because no job ever read {@code scheduledAt}. It now creates a real {@link
+     * com.zgate.controlcenter.domain.FleetRollout} over the orgs' provisioned stacks, which the
+     * orchestrator executes (honouring the schedule, the canary/wave shape and the entitlement gate).
+     *
+     * <p>Organizations with no Control-Center-provisioned stack still get a history row marked
+     * PENDING: those are customer-run installs, which update by pulling (the update checker tells
+     * them a release is entitled) rather than by anything this console can push.
+     */
     @Transactional
-    public List<Deployment> pushUpdate(PushUpdateRequest req, String pushedBy) {
+    public PushResult pushUpdate(PushUpdateRequest req, String pushedBy) {
         var release = releaseRepo.findById(req.getReleaseId())
             .orElseThrow(() -> new ControlCenterException("Release not found"));
 
-        return req.getOrganizationIds().stream().map(orgId -> {
+        List<UUID> pushable = new java.util.ArrayList<>();
+        List<Deployment> records = new java.util.ArrayList<>();
+
+        for (UUID orgId : req.getOrganizationIds()) {
             Organization org = orgRepo.findById(orgId)
                 .orElseThrow(() -> new ControlCenterException("Organization not found: " + orgId));
 
-            Deployment dep = repo.save(Deployment.builder()
+            boolean hasStack = stackRepo.findByOrganizationIdOrderByCreatedAtDesc(orgId).stream()
+                .anyMatch(st -> st.getLastAppliedAt() != null
+                    && st.getStatus() != com.zgate.controlcenter.domain.InfrastructureStack.Status.DESTROYED);
+            if (hasStack) {
+                pushable.add(orgId);
+                continue;   // the rollout owns the history row for these
+            }
+
+            // Self-hosted: record the intent so the org page shows what it is entitled to, and be
+            // explicit in the log that this one is not something we can push.
+            records.add(repo.save(Deployment.builder()
                 .organizationId(orgId)
                 .releaseId(release.getId())
-                .status(req.getScheduledAt() != null ? Deployment.Status.PENDING : Deployment.Status.IN_PROGRESS)
+                .status(Deployment.Status.PENDING)
                 .deployedBy(pushedBy)
                 .fromVersion(org.getDeployedVersion())
                 .toVersion(release.getVersion())
                 .scheduledAt(req.getScheduledAt())
-                .startedAt(req.getScheduledAt() == null ? LocalDateTime.now() : null)
-                .build());
+                .logs("No Control-Center-provisioned stack for this organization — it updates by "
+                    + "pulling its entitled release, not by a push from here.")
+                .build()));
+        }
 
-            // Mark org as updating
-            org.setDeploymentStatus(Organization.DeploymentStatus.DEGRADED);
-            orgRepo.save(org);
+        UUID rolloutId = null;
+        if (!pushable.isEmpty()) {
+            List<UUID> stackIds = pushable.stream()
+                .flatMap(orgId -> stackRepo.findByOrganizationIdOrderByCreatedAtDesc(orgId).stream())
+                .filter(st -> st.getLastAppliedAt() != null
+                    && st.getStatus() != com.zgate.controlcenter.domain.InfrastructureStack.Status.DESTROYED)
+                .map(com.zgate.controlcenter.domain.InfrastructureStack::getId)
+                .toList();
 
-            return dep;
-        }).toList();
+            var rolloutReq = new FleetRolloutService.CreateRolloutRequest();
+            rolloutReq.setReleaseId(release.getId());
+            rolloutReq.setStackIds(stackIds);
+            rolloutReq.setScheduledFor(req.getScheduledAt());
+            // A push from this screen is an explicit operator action on a chosen set, so it applies
+            // unattended; the canary shape still limits the blast radius of a bad release.
+            rolloutReq.setAutoApply(true);
+            var rollout = rolloutService.create(rolloutReq, pushedBy);
+            rolloutId = rollout.getId();
+        }
+
+        log.info("Push update: release {} to {} org(s) — {} via rollout {}, {} self-hosted",
+                 release.getVersion(), req.getOrganizationIds().size(), pushable.size(),
+                 rolloutId, records.size());
+        return new PushResult(rolloutId, records, pushable.size(), records.size());
     }
+
+    /**
+     * @param rolloutId       the rollout executing the push, or null when every target is self-hosted
+     * @param selfHostedCount organizations recorded but NOT pushed (no provisioned stack)
+     */
+    public record PushResult(UUID rolloutId, List<Deployment> deployments,
+                             int rolloutStackCount, int selfHostedCount) {}
 
     public Deployment updateStatus(UUID id, Deployment.Status status, String logs) {
         Deployment dep = findById(id);

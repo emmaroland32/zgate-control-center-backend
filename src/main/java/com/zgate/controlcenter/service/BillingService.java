@@ -245,6 +245,31 @@ public class BillingService {
         return out;
     }
 
+    /**
+     * An invoice with the two things the console needs but the entity does not carry: the customer's
+     * NAME (it printed a raw UUID) and the line items (the detail drawer's table was always empty
+     * even though the data existed behind a separate endpoint nothing called).
+     */
+    public record InvoiceView(Invoice invoice, String organizationName, String organizationEmail,
+                              List<InvoiceLineItem> lineItems) {}
+
+    public List<InvoiceView> listInvoices() {
+        java.util.Map<UUID, Organization> orgs = new java.util.HashMap<>();
+        orgRepo.findAll().forEach(o -> orgs.put(o.getId(), o));
+        return invoiceRepo.findAll().stream()
+            .map(inv -> {
+                Organization org = orgs.get(inv.getOrganizationId());
+                return new InvoiceView(inv,
+                    org == null ? null : org.getName(),
+                    org == null ? null : org.getContactEmail(),
+                    lineItemRepo.findByInvoiceId(inv.getId()));
+            })
+            .sorted(java.util.Comparator.comparing(
+                (InvoiceView v) -> v.invoice().getCreatedAt(),
+                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+            .toList();
+    }
+
     public record BillingAccount(UUID organizationId, String organizationName, String billingEmail,
                                  String country, BigDecimal currentMonthEstimateUsd,
                                  BigDecimal outstandingBalanceUsd) {}

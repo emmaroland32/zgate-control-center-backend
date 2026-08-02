@@ -21,6 +21,11 @@ public interface TelemetryEventRepository extends JpaRepository<TelemetryEvent, 
 
     long countByLevelAndAcknowledgedFalse(TelemetryEvent.Level level);
 
+    /** Window counts behind the error-rate metric. */
+    long countByOccurredAtAfter(LocalDateTime since);
+
+    long countByLevelAndOccurredAtAfter(TelemetryEvent.Level level, LocalDateTime since);
+
     long countByOrganizationIdAndLevelAndAcknowledgedFalse(UUID orgId, TelemetryEvent.Level level);
 
     @Query(value = """

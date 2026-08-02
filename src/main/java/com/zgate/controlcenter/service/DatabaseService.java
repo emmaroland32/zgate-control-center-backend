@@ -33,11 +33,6 @@ public class DatabaseService {
         String type, String installedOn, int executionTime, String schema
     ) {}
 
-    public record BackupEntry(
-        String id, String name, long sizeBytes, String status,
-        String createdAt, String completedAt
-    ) {}
-
     // ── Test Connection ────────────────────────────────────────────────
     public Map<String, Object> testConnection() {
         long start = System.nanoTime();
@@ -154,28 +149,4 @@ public class DatabaseService {
         );
     }
 
-    // ── Backups (placeholder — real impl would use pg_dump) ──────────
-    private final List<BackupEntry> backups = Collections.synchronizedList(new ArrayList<>());
-
-    public List<BackupEntry> getBackups() {
-        return List.copyOf(backups);
-    }
-
-    private static final int MAX_BACKUP_HISTORY = 100;
-
-    public BackupEntry createBackup(String name) {
-        BackupEntry entry = new BackupEntry(
-            UUID.randomUUID().toString(), name, 0, "COMPLETED",
-            LocalDateTime.now().toString(), LocalDateTime.now().toString()
-        );
-        backups.add(0, entry);
-        if (backups.size() > MAX_BACKUP_HISTORY) {
-            backups.subList(MAX_BACKUP_HISTORY, backups.size()).clear();
-        }
-        return entry;
-    }
-
-    public void deleteBackup(String id) {
-        backups.removeIf(b -> b.id().equals(id));
-    }
 }

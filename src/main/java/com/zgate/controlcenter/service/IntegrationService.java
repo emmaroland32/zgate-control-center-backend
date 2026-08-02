@@ -41,6 +41,11 @@ public class IntegrationService {
     }
 
     @Transactional
+    public Webhook findWebhook(UUID id) {
+        return webhookRepo.findById(id)
+                .orElseThrow(() -> new ControlCenterException("Webhook not found: " + id));
+    }
+
     public Webhook createWebhook(Webhook webhook, String createdBy) {
         // Refuse internal targets up front: Control Center delivers from the host holding cloud
         // and signing credentials, so an internal URL here is an SSRF primitive.

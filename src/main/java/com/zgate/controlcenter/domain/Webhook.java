@@ -48,6 +48,18 @@ public class Webhook {
     @Column(nullable = false)
     private long fireCount;
 
+    /** Successful deliveries, so a success rate can be shown without scanning the delivery log. */
+    @Column(nullable = false)
+    private long successCount;
+
+    /**
+     * Percentage of deliveries that returned 2xx. Derived, not stored — the console rendered this
+     * field when nothing produced it, which crashed the Integrations page on the first webhook.
+     */
+    public double getSuccessRate() {
+        return fireCount <= 0 ? 100.0 : Math.round(successCount * 1000.0 / fireCount) / 10.0;
+    }
+
     private String createdBy;
 
     @Column(nullable = false, updatable = false)
