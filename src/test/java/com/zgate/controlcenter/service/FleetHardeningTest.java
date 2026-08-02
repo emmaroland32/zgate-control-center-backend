@@ -246,6 +246,28 @@ class FleetHardeningTest {
         }
 
         @Test
+        @DisplayName("password policy is enforced on create and on password change")
+        void passwordPolicyEnforced() {
+            ReflectionTestUtils.setField(svc, "passwordMinLength", 12);
+            ReflectionTestUtils.setField(svc, "passwordRequireMixedCase", true);
+            ReflectionTestUtils.setField(svc, "passwordRequireDigit", true);
+            ReflectionTestUtils.setField(svc, "passwordRequireSymbol", false);
+
+            for (String weak : new String[]{"short1A", "alllowercase1", "NODIGITSHEREaa", null}) {
+                assertThatThrownBy(() -> svc.requirePasswordPolicy(weak))
+                    .describedAs("must reject %s", weak)
+                    .isInstanceOfSatisfying(ControlCenterException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("PASSWORD_POLICY"));
+            }
+            svc.requirePasswordPolicy("CorrectHorse9Battery");   // meets the policy
+
+            // The reported policy is the one actually applied — the console displays this verbatim.
+            assertThat(svc.securityPolicy())
+                .containsEntry("passwordMinLength", 12)
+                .containsEntry("passwordRequireDigit", true);
+        }
+
+        @Test
         @DisplayName("disable revokes sessions too — deactivating alone left tokens alive for 24h")
         void disableRevokes() {
             int before = user.getTokenVersion();

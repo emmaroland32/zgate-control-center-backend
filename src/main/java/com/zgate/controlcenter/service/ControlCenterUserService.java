@@ -33,6 +33,59 @@ public class ControlCenterUserService {
     @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.lockout.maxMinutes:60}")
     private long lockoutMaxMinutes;
 
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.password.minLength:12}")
+    private int passwordMinLength;
+
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.password.requireMixedCase:true}")
+    private boolean passwordRequireMixedCase;
+
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.password.requireDigit:true}")
+    private boolean passwordRequireDigit;
+
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.password.requireSymbol:false}")
+    private boolean passwordRequireSymbol;
+
+    /**
+     * Enforce the password policy on any credential this console accepts. The settings screen used
+     * to display these rules while nothing applied them — a control that only exists in the UI is
+     * worse than none, because operators believe it is on.
+     */
+    void requirePasswordPolicy(String password) {
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        if (password == null || password.length() < passwordMinLength) {
+            problems.add("at least " + passwordMinLength + " characters");
+        }
+        String p = password == null ? "" : password;
+        if (passwordRequireMixedCase
+                && !(p.chars().anyMatch(Character::isUpperCase) && p.chars().anyMatch(Character::isLowerCase))) {
+            problems.add("upper and lower case letters");
+        }
+        if (passwordRequireDigit && p.chars().noneMatch(Character::isDigit)) {
+            problems.add("a digit");
+        }
+        if (passwordRequireSymbol && p.chars().allMatch(Character::isLetterOrDigit)) {
+            problems.add("a symbol");
+        }
+        if (!problems.isEmpty()) {
+            throw new ControlCenterException(
+                "That password does not meet the policy — it needs " + String.join(", ", problems) + ".",
+                "PASSWORD_POLICY", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /** The policy actually enforced, so the console can display it truthfully. */
+    public java.util.Map<String, Object> securityPolicy() {
+        return java.util.Map.of(
+            "passwordMinLength", passwordMinLength,
+            "passwordRequireMixedCase", passwordRequireMixedCase,
+            "passwordRequireDigit", passwordRequireDigit,
+            "passwordRequireSymbol", passwordRequireSymbol,
+            "lockoutThreshold", lockoutThreshold,
+            "lockoutBaseMinutes", lockoutBaseMinutes,
+            "lockoutMaxMinutes", lockoutMaxMinutes,
+            "mfaSecretsEncrypted", cipher.isConfigured());
+    }
+
     public List<ControlCenterUser> findAll() { return repo.findAll(); }
 
     public ControlCenterUser findById(UUID id) {
@@ -43,6 +96,7 @@ public class ControlCenterUserService {
         if (repo.existsByEmail(req.getEmail())) {
             throw new ControlCenterException("Email already in use: " + req.getEmail());
         }
+        requirePasswordPolicy(req.getPassword());
         return repo.save(ControlCenterUser.builder()
             .name(req.getName())
             .email(req.getEmail())
@@ -66,6 +120,7 @@ public class ControlCenterUserService {
             securityRelevantChange = true;
         }
         if (req.getPassword() != null && !req.getPassword().isBlank()) {
+            requirePasswordPolicy(req.getPassword());
             user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
             securityRelevantChange = true;
         }

@@ -75,11 +75,13 @@ public class BackupAdminController {
             @PathVariable UUID orgId, @PathVariable UUID backupId,
             @org.springframework.security.core.annotation.AuthenticationPrincipal
             org.springframework.security.core.userdetails.UserDetails user) {
-        String url = backupService.restoreUrl(orgId, backupId);
+        // Audited BEFORE the URL exists: a failure after minting would leave a live 30-minute
+        // capability to download a customer's database ciphertext with nothing recording it.
         audit.log(user.getUsername(), user.getUsername(), "BACKUP_RESTORE_URL_ISSUED",
                   "BackupRecord", backupId.toString(), orgId, null,
-                  "ciphertext download link issued to operator",
+                  "ciphertext download link requested by operator (~30 min validity)",
                   com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
+        String url = backupService.restoreUrl(orgId, backupId);
         return ResponseEntity.ok(java.util.Map.of("downloadUrl", url));
     }
 }

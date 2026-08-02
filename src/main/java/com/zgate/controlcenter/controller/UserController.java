@@ -31,6 +31,13 @@ public class UserController {
                   com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
     }
 
+    /** The security policy this server actually enforces — so the console can stop guessing. */
+    @GetMapping("/security-policy")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.Map<String, Object>> securityPolicy() {
+        return ResponseEntity.ok(service.securityPolicy());
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<ControlCenterUser>> findAll() { return ResponseEntity.ok(service.findAll()); }
