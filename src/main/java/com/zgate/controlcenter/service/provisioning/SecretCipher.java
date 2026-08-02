@@ -52,14 +52,21 @@ public class SecretCipher {
     private static final byte VERSION = 1;
     private static final int IV_LENGTH = 12;      // GCM standard nonce size
     private static final int TAG_LENGTH_BITS = 128;
+    /** Default purpose — the cloud-credential store this class was built for. */
     private static final String PURPOSE = "cloud-credential";
+
+    /** MFA secrets: a distinct purpose, so the two stores never share derived key material. */
+    public static final String PURPOSE_MFA = "mfa-secret";
 
     private final String masterKeyB64;
     private final String keyringSpec;
     private final String activeKeyId;
 
-    /** kid -> derived AES key. Contains every key ever used, so old rows stay readable. */
-    private final Map<String, SecretKey> keyring = new HashMap<>();
+    /** kid -> master bytes. Contains every key ever used, so old rows stay readable. */
+    private final Map<String, byte[]> keyring = new HashMap<>();
+
+    /** (kid, purpose) -> derived AES key. Derivation is deterministic; this is just a cache. */
+    private final Map<String, SecretKey> derived = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final SecureRandom random = new SecureRandom();
 
@@ -82,11 +89,11 @@ public class SecretCipher {
                     throw new IllegalStateException(
                         "controlcenter.provisioning.encryptionKeys entries must be '<keyId>:<base64Key>' — got: " + entry);
                 }
-                keyring.put(parts[0].trim(), derive(decodeKey(parts[1].trim())));
+                keyring.put(parts[0].trim(), decodeKey(parts[1].trim()));
             }
         } else if (!masterKeyB64.isBlank()) {
             // Single-key form: the whole keyring is the active id.
-            keyring.put(activeKeyId, derive(decodeKey(masterKeyB64)));
+            keyring.put(activeKeyId, decodeKey(masterKeyB64));
         }
 
         if (keyring.isEmpty()) {
@@ -120,6 +127,11 @@ public class SecretCipher {
      * returned ciphertext — without it the value cannot be read back after a rotation.
      */
     public String encrypt(String plaintext) {
+        return encrypt(plaintext, PURPOSE);
+    }
+
+    /** As {@link #encrypt(String)}, under a named purpose's derived subkey. */
+    public String encrypt(String plaintext, String purpose) {
         if (plaintext == null) return null;
         requireConfigured();
 
@@ -128,7 +140,7 @@ public class SecretCipher {
             random.nextBytes(iv);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, keyring.get(activeKeyId), new GCMParameterSpec(TAG_LENGTH_BITS, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, keyFor(activeKeyId, purpose), new GCMParameterSpec(TAG_LENGTH_BITS, iv));
             byte[] ct = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
 
             ByteBuffer buf = ByteBuffer.allocate(1 + IV_LENGTH + ct.length);
@@ -151,10 +163,15 @@ public class SecretCipher {
      *              worse, be mistaken for a corrupt credential much later.
      */
     public String decrypt(String ciphertextB64, String keyId) {
+        return decrypt(ciphertextB64, keyId, PURPOSE);
+    }
+
+    /** As {@link #decrypt(String, String)}, under a named purpose's derived subkey. */
+    public String decrypt(String ciphertextB64, String keyId, String purpose) {
         if (ciphertextB64 == null) return null;
         requireConfigured();
 
-        SecretKey key = keyring.get(keyId);
+        SecretKey key = keyFor(keyId, purpose);
         if (key == null) {
             throw new ControlCenterException(
                 "This credential was encrypted with key '" + keyId + "', which is not in the configured "
@@ -218,15 +235,22 @@ public class SecretCipher {
         return key;
     }
 
+    /** Derived subkey for (keyId, purpose), or null when the key id is not in the keyring. */
+    private SecretKey keyFor(String keyId, String purpose) {
+        byte[] master = keyring.get(keyId);
+        if (master == null) return null;
+        return derived.computeIfAbsent(keyId + "\u0000" + purpose, k -> derive(master, purpose));
+    }
+
     /**
      * Per-purpose subkey via HMAC-SHA-256, so the master never encrypts directly and a second
      * purpose added later cannot share key material with the credential store.
      */
-    private SecretKey derive(byte[] master) {
+    private SecretKey derive(byte[] master, String purpose) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(master, "HmacSHA256"));
-            return new SecretKeySpec(mac.doFinal(PURPOSE.getBytes(StandardCharsets.UTF_8)), "AES");
+            return new SecretKeySpec(mac.doFinal(purpose.getBytes(StandardCharsets.UTF_8)), "AES");
         } catch (Exception e) {
             throw new IllegalStateException("Could not derive the credential encryption key", e);
         }

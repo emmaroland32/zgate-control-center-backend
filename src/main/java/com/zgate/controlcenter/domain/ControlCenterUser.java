@@ -44,18 +44,32 @@ public class ControlCenterUser {
     @Builder.Default
     private int tokenVersion = 0;
 
-    /** The LIVE base32 TOTP secret. Replaced only by a successful activation. */
+    /**
+     * The LIVE TOTP secret, as an AES-GCM envelope (see {@code SecretCipher}, purpose
+     * {@code mfa-secret}). Replaced only by a successful activation. Never handled raw outside
+     * {@code ControlCenterUserService} — a plaintext secret here would let anyone who can read the
+     * database mint valid second factors.
+     */
     @JsonIgnore
-    @Column(length = 64)
+    @Column(length = 512)
     private String mfaSecret;
 
     /**
-     * A newly-issued secret awaiting proof that the authenticator holds it. Kept separate so
-     * starting an enrollment can never disable a factor that is already protecting the account.
+     * A newly-issued secret awaiting proof that the authenticator holds it, same envelope format.
+     * Kept separate so starting an enrollment can never disable a factor already protecting the
+     * account.
+     */
+    @JsonIgnore
+    @Column(length = 512)
+    private String mfaPendingSecret;
+
+    /**
+     * Key id both MFA envelopes were written with. NULL means the row predates encryption and holds
+     * plaintext — still accepted at login, and re-encrypted on the next successful verification.
      */
     @JsonIgnore
     @Column(length = 64)
-    private String mfaPendingSecret;
+    private String mfaKeyId;
 
     /**
      * Last accepted TOTP time step. A code is valid for its step only — without this a captured

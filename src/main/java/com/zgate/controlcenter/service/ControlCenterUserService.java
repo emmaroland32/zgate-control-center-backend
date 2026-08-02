@@ -20,6 +20,7 @@ public class ControlCenterUserService {
     private final ControlCenterUserRepository repo;
     private final PasswordEncoder passwordEncoder;
     private final com.zgate.controlcenter.security.TotpService totp;
+    private final com.zgate.controlcenter.service.provisioning.SecretCipher cipher;
 
     /** Consecutive failures before the account locks. */
     @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.lockout.threshold:5}")
@@ -115,13 +116,15 @@ public class ControlCenterUserService {
                 "A verification code from your authenticator app is required.",
                 "MFA_REQUIRED", org.springframework.http.HttpStatus.UNAUTHORIZED);
         }
-        Long step = totp.matchedStep(user.getMfaSecret(), mfaCode.trim(), user.getMfaLastStep());
+        Long step = totp.matchedStep(readSecret(user.getMfaSecret(), user.getMfaKeyId()),
+                                     mfaCode.trim(), user.getMfaLastStep());
         if (step == null) {
             throw new com.zgate.controlcenter.exception.ControlCenterException(
                 "That verification code is not valid.",
                 "MFA_INVALID", org.springframework.http.HttpStatus.UNAUTHORIZED);
         }
         user.setMfaLastStep(step);
+        upgradeSecretStorage(user);
         repo.save(user);
     }
 
@@ -136,7 +139,7 @@ public class ControlCenterUserService {
             new com.zgate.controlcenter.exception.ControlCenterException("User not found"));
 
         if (user.isMfaEnabled()) {
-            Long step = totp.matchedStep(user.getMfaSecret(),
+            Long step = totp.matchedStep(readSecret(user.getMfaSecret(), user.getMfaKeyId()),
                 currentCode == null ? "" : currentCode.trim(), user.getMfaLastStep());
             if (step == null) {
                 throw new com.zgate.controlcenter.exception.ControlCenterException(
@@ -147,9 +150,17 @@ public class ControlCenterUserService {
             user.setMfaLastStep(step);
         }
 
+        // One key id covers both columns, so stamping the active key for the pending secret would
+        // orphan a live secret written under an older key (or a legacy plaintext one) — locking the
+        // operator out if they abandon the enrollment. Re-stamp the live secret in the same step.
+        String liveplain = readSecret(user.getMfaSecret(), user.getMfaKeyId());
+
         String secret = totp.generateSecret();
-        user.setMfaPendingSecret(secret);
+        user.setMfaPendingSecret(writeSecret(secret));
+        if (liveplain != null) user.setMfaSecret(writeSecret(liveplain));
+        user.setMfaKeyId(cipher.activeKeyId());
         repo.save(user);
+        // The plaintext is returned exactly once, for the operator's authenticator app.
         return java.util.Map.of("secret", secret, "otpauthUri", totp.otpauthUri(secret, email));
     }
 
@@ -161,7 +172,8 @@ public class ControlCenterUserService {
             throw new com.zgate.controlcenter.exception.ControlCenterException(
                 "Start enrollment first.", "MFA_NOT_ENROLLING", org.springframework.http.HttpStatus.BAD_REQUEST);
         }
-        Long step = totp.matchedStep(user.getMfaPendingSecret(), code == null ? "" : code.trim(), null);
+        Long step = totp.matchedStep(readSecret(user.getMfaPendingSecret(), user.getMfaKeyId()),
+                                     code == null ? "" : code.trim(), null);
         if (step == null) {
             throw new com.zgate.controlcenter.exception.ControlCenterException(
                 "That verification code is not valid — scan the secret again and retry.",
@@ -174,6 +186,51 @@ public class ControlCenterUserService {
         // The account's authentication requirements just changed; existing tokens predate that.
         user.setTokenVersion(user.getTokenVersion() + 1);
         repo.save(user);
+    }
+
+    // ── MFA secret storage ──────────────────────────────────────────────────
+
+    /**
+     * Read a stored MFA secret. A row written before encryption existed has no key id and holds
+     * plaintext — it is still readable so an already-enrolled operator is never locked out by the
+     * upgrade; {@link #upgradeSecretStorage} re-encrypts it on their next successful code.
+     */
+    private String readSecret(String stored, String keyId) {
+        if (stored == null || stored.isBlank()) return null;
+        if (keyId == null) return stored;                 // legacy plaintext
+        return cipher.decrypt(stored, keyId,
+            com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA);
+    }
+
+    /**
+     * Encrypt a secret for storage. Refuses when no key is configured rather than silently writing
+     * plaintext: a second factor whose seed sits readable in the database is not a second factor,
+     * and a security feature that quietly degrades is worse than one that says why it cannot run.
+     */
+    private String writeSecret(String plaintext) {
+        if (!cipher.isConfigured()) {
+            throw new com.zgate.controlcenter.exception.ControlCenterException(
+                "Two-factor authentication needs secret encryption configured. Set "
+              + "controlcenter.provisioning.encryptionKey (base64, 32+ bytes) — it also protects "
+              + "MFA secrets, under a separately derived key.",
+                "MFA_ENCRYPTION_NOT_CONFIGURED", org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        return cipher.encrypt(plaintext,
+            com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA);
+    }
+
+    /** Opportunistically move a legacy plaintext secret into an envelope. Never fails the login. */
+    private void upgradeSecretStorage(ControlCenterUser user) {
+        if (user.getMfaKeyId() != null || user.getMfaSecret() == null) return;
+        if (!cipher.isConfigured()) return;
+        try {
+            user.setMfaSecret(writeSecret(user.getMfaSecret()));
+            user.setMfaKeyId(cipher.activeKeyId());
+            log.info("Re-encrypted the stored MFA secret for {}", user.getEmail());
+        } catch (RuntimeException e) {
+            log.warn("Could not re-encrypt the MFA secret for {}: {}",
+                     user.getEmail(), e.getClass().getSimpleName());
+        }
     }
 
     // ── Login throttling ────────────────────────────────────────────────────
@@ -224,6 +281,9 @@ public class ControlCenterUserService {
         ControlCenterUser user = findById(id);
         user.setMfaEnabled(false);
         user.setMfaSecret(null);
+        user.setMfaPendingSecret(null);
+        user.setMfaKeyId(null);
+        user.setMfaLastStep(null);
         // The account just lost a factor — kill existing sessions so a hijacked token can't ride it.
         user.setTokenVersion(user.getTokenVersion() + 1);
         repo.save(user);

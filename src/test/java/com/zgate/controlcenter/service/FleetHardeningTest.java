@@ -85,13 +85,23 @@ class FleetHardeningTest {
         private ControlCenterUserRepository repo;
         private ControlCenterUserService svc;
         private ControlCenterUser user;
+        private com.zgate.controlcenter.service.provisioning.SecretCipher cipher;
+
+        /** The stored form is an envelope; tests assert on what it decrypts to. */
+        private String liveSecretOf(ControlCenterUser u) {
+            return cipher.decrypt(u.getMfaSecret(), u.getMfaKeyId(),
+                com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA);
+        }
 
         @BeforeEach
         void setUp() {
             repo = mock(ControlCenterUserRepository.class);
             TotpService totp = new TotpService();
+            cipher = new com.zgate.controlcenter.service.provisioning.SecretCipher(
+                java.util.Base64.getEncoder().encodeToString(new byte[32]), "", "v1");
+            ReflectionTestUtils.invokeMethod(cipher, "init");
             svc = new ControlCenterUserService(repo,
-                mock(org.springframework.security.crypto.password.PasswordEncoder.class), totp);
+                mock(org.springframework.security.crypto.password.PasswordEncoder.class), totp, cipher);
             ReflectionTestUtils.setField(svc, "lockoutThreshold", 5);
             ReflectionTestUtils.setField(svc, "lockoutBaseMinutes", 1);
             ReflectionTestUtils.setField(svc, "lockoutMaxMinutes", 60L);
@@ -109,7 +119,9 @@ class FleetHardeningTest {
             svc.requireMfaIfEnabled("op@zgate.io", null);            // passes silently
 
             user.setMfaEnabled(true);
-            user.setMfaSecret(new TotpService().generateSecret());
+            user.setMfaSecret(cipher.encrypt(new TotpService().generateSecret(),
+                com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA));
+            user.setMfaKeyId("v1");
             assertThatThrownBy(() -> svc.requireMfaIfEnabled("op@zgate.io", null))
                 .isInstanceOfSatisfying(ControlCenterException.class,
                     e -> assertThat(e.getCode()).isEqualTo("MFA_REQUIRED"));
@@ -129,12 +141,16 @@ class FleetHardeningTest {
             assertThatThrownBy(() -> svc.mfaActivate("op@zgate.io", "000001"))
                 .isInstanceOf(ControlCenterException.class);
 
-            String code = new TotpService().generateCode(user.getMfaPendingSecret(),
+            String staged = cipher.decrypt(user.getMfaPendingSecret(), user.getMfaKeyId(),
+                com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA);
+            String code = new TotpService().generateCode(staged,
                 System.currentTimeMillis() / 1000 / 30);
             svc.mfaActivate("op@zgate.io", code);
             assertThat(user.isMfaEnabled()).isTrue();
-            assertThat(user.getMfaSecret()).isNotBlank();
             assertThat(user.getMfaPendingSecret()).isNull();
+            // Stored encrypted, and the plaintext never appears in the column.
+            assertThat(user.getMfaSecret()).isNotBlank().isNotEqualTo(staged);
+            assertThat(liveSecretOf(user)).isEqualTo(staged);
         }
 
         @Test
@@ -142,7 +158,9 @@ class FleetHardeningTest {
         void enrollCannotDowngradeMfa() {
             String live = new TotpService().generateSecret();
             user.setMfaEnabled(true);
-            user.setMfaSecret(live);
+            user.setMfaSecret(cipher.encrypt(live,
+                com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA));
+            user.setMfaKeyId("v1");
 
             assertThatThrownBy(() -> svc.mfaEnroll("op@zgate.io", null))
                 .isInstanceOfSatisfying(ControlCenterException.class,
@@ -150,14 +168,14 @@ class FleetHardeningTest {
 
             // The whole point: a session-holding attacker cannot strip the second factor.
             assertThat(user.isMfaEnabled()).isTrue();
-            assertThat(user.getMfaSecret()).isEqualTo(live);
+            assertThat(liveSecretOf(user)).isEqualTo(live);
             assertThat(user.getMfaPendingSecret()).isNull();
 
             // With a current code, re-enrollment stages a NEW secret but still leaves MFA on.
             String code = new TotpService().generateCode(live, System.currentTimeMillis() / 1000 / 30);
             svc.mfaEnroll("op@zgate.io", code);
             assertThat(user.isMfaEnabled()).isTrue();
-            assertThat(user.getMfaSecret()).isEqualTo(live);
+            assertThat(liveSecretOf(user)).isEqualTo(live);
             assertThat(user.getMfaPendingSecret()).isNotBlank().isNotEqualTo(live);
         }
 
@@ -166,7 +184,9 @@ class FleetHardeningTest {
         void codeIsSingleUse() {
             String secret = new TotpService().generateSecret();
             user.setMfaEnabled(true);
-            user.setMfaSecret(secret);
+            user.setMfaSecret(cipher.encrypt(secret,
+                com.zgate.controlcenter.service.provisioning.SecretCipher.PURPOSE_MFA));
+            user.setMfaKeyId("v1");
             String code = new TotpService().generateCode(secret, System.currentTimeMillis() / 1000 / 30);
 
             svc.requireMfaIfEnabled("op@zgate.io", code);          // first use: accepted
@@ -191,6 +211,38 @@ class FleetHardeningTest {
             assertThat(user.getFailedLoginAttempts()).isZero();
             assertThat(user.getLockedUntil()).isNull();
             svc.requireNotLockedOut("op@zgate.io");                // no longer throws
+        }
+
+        @Test
+        @DisplayName("a legacy PLAINTEXT secret still logs in, and is re-encrypted in place")
+        void legacyPlaintextSecretUpgrades() {
+            String legacy = new TotpService().generateSecret();
+            user.setMfaEnabled(true);
+            user.setMfaSecret(legacy);      // written before encryption existed
+            user.setMfaKeyId(null);
+
+            String code = new TotpService().generateCode(legacy, System.currentTimeMillis() / 1000 / 30);
+            svc.requireMfaIfEnabled("op@zgate.io", code);   // must not lock the operator out
+
+            assertThat(user.getMfaKeyId()).isEqualTo("v1");
+            assertThat(user.getMfaSecret()).isNotEqualTo(legacy);
+            assertThat(liveSecretOf(user)).isEqualTo(legacy);
+        }
+
+        @Test
+        @DisplayName("re-enrolling re-stamps the live secret so an abandoned enrollment cannot orphan it")
+        void enrollKeepsLiveSecretReadable() {
+            String live = new TotpService().generateSecret();
+            user.setMfaEnabled(true);
+            user.setMfaSecret(live);        // legacy plaintext, keyId null
+            user.setMfaKeyId(null);
+
+            String code = new TotpService().generateCode(live, System.currentTimeMillis() / 1000 / 30);
+            svc.mfaEnroll("op@zgate.io", code);
+
+            // Enrollment abandoned here: the live secret must still be readable under the new key id.
+            assertThat(user.getMfaKeyId()).isEqualTo("v1");
+            assertThat(liveSecretOf(user)).isEqualTo(live);
         }
 
         @Test
