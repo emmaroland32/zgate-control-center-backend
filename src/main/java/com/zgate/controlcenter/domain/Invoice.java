@@ -48,6 +48,16 @@ public class Invoice {
     @Column(nullable = false)
     private Status status;
 
+    /**
+     * USAGE — the monthly shared-services + backup invoice.
+     * SUBSCRIPTION — a renewal of the platform subscription; marking it PAID extends
+     * {@code Organization.subscriptionValidUntil} to this invoice's {@code periodEnd}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "invoice_type", nullable = false, length = 16)
+    @Builder.Default
+    private Type type = Type.USAGE;
+
     private LocalDate dueDate;
     private LocalDateTime paidAt;
     private LocalDateTime sentAt;
@@ -66,4 +76,5 @@ public class Invoice {
     @PreUpdate  void preUpdate()  { updatedAt = LocalDateTime.now(); }
 
     public enum Status { DRAFT, SENT, PAID, OVERDUE, CANCELLED }
+    public enum Type   { USAGE, SUBSCRIPTION }
 }

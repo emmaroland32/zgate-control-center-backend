@@ -17,4 +17,17 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
     @Query("SELECT o FROM Organization o WHERE o.serviceApiKeyHash = :keyHash")
     Optional<Organization> findByServiceApiKeyHash(String keyHash);
+
+    /**
+     * Atomically advance the paid-through date, never regress it. A read-modify-write with a Java
+     * max() is last-writer-wins under concurrency (two payments marked at once, or an admin
+     * entitlement form racing a payment) — GREATEST in the database is not.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value =
+        "UPDATE organizations SET subscription_valid_until = "
+      + "GREATEST(COALESCE(subscription_valid_until, :paidThrough), :paidThrough) "
+      + "WHERE id = :orgId", nativeQuery = true)
+    int advanceSubscriptionPaidThrough(@org.springframework.data.repository.query.Param("orgId") UUID orgId,
+        @org.springframework.data.repository.query.Param("paidThrough") java.time.LocalDateTime paidThrough);
 }

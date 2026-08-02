@@ -35,6 +35,48 @@ public class ControlCenterUser {
     @Column(nullable = false)
     private boolean active = true;
 
+    /**
+     * Stamped into every issued JWT as the {@code tv} claim; a token whose claim doesn't match is
+     * rejected. Incrementing this is what "revoke sessions" actually does — every outstanding token
+     * dies at once.
+     */
+    @Column(nullable = false)
+    @Builder.Default
+    private int tokenVersion = 0;
+
+    /** The LIVE base32 TOTP secret. Replaced only by a successful activation. */
+    @JsonIgnore
+    @Column(length = 64)
+    private String mfaSecret;
+
+    /**
+     * A newly-issued secret awaiting proof that the authenticator holds it. Kept separate so
+     * starting an enrollment can never disable a factor that is already protecting the account.
+     */
+    @JsonIgnore
+    @Column(length = 64)
+    private String mfaPendingSecret;
+
+    /**
+     * Last accepted TOTP time step. A code is valid for its step only — without this a captured
+     * code is replayable for up to 90 seconds (RFC 6238 §5.2 requires single use).
+     */
+    @JsonIgnore
+    private Long mfaLastStep;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean mfaEnabled = false;
+
+    /** Consecutive failed logins; drives the lockout backoff. Reset on success. */
+    @JsonIgnore
+    @Column(nullable = false)
+    @Builder.Default
+    private int failedLoginAttempts = 0;
+
+    @JsonIgnore
+    private LocalDateTime lockedUntil;
+
     private LocalDateTime lastLoginAt;
 
     @Column(nullable = false, updatable = false)

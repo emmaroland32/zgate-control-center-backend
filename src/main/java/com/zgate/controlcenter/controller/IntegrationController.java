@@ -33,11 +33,13 @@ public class IntegrationController {
     // ----------------------------------------------------------------
 
     @GetMapping("/webhooks")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<Webhook>> findAllWebhooks() {
         return ResponseEntity.ok(service.findAllWebhooks());
     }
 
     @PostMapping("/webhooks")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "WEBHOOK_CREATED", value = "Webhook created")
     public ResponseEntity<Webhook> createWebhook(@RequestBody CreateWebhookRequest req,
                                                   @AuthenticationPrincipal UserDetails user) {
@@ -55,6 +57,7 @@ public class IntegrationController {
     }
 
     @PutMapping("/webhooks/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "WEBHOOK_UPDATED", value = "Webhook updated")
     public ResponseEntity<Webhook> updateWebhook(@PathVariable UUID id,
                                                   @RequestBody CreateWebhookRequest req) {
@@ -70,6 +73,7 @@ public class IntegrationController {
     }
 
     @PatchMapping("/webhooks/{id}/toggle")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "WEBHOOK_TOGGLED", value = "Webhook toggled")
     public ResponseEntity<?> toggleWebhook(@PathVariable UUID id) {
         service.toggleWebhook(id);
@@ -85,11 +89,13 @@ public class IntegrationController {
     }
 
     @GetMapping("/webhooks/logs")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<WebhookDelivery>> getRecentDeliveries() {
         return ResponseEntity.ok(service.getRecentDeliveries());
     }
 
     @GetMapping("/webhooks/{id}/logs")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<WebhookDelivery>> getWebhookLogs(@PathVariable UUID id) {
         return ResponseEntity.ok(service.getWebhookLogs(id));
     }
@@ -99,11 +105,13 @@ public class IntegrationController {
     // ----------------------------------------------------------------
 
     @GetMapping("/api-keys")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<ApiKey>> findAllApiKeys() {
         return ResponseEntity.ok(service.findAllApiKeys());
     }
 
     @PostMapping("/api-keys")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "API_KEY_CREATED", value = "API key created")
     public ResponseEntity<CreateApiKeyResult> createApiKey(@RequestBody CreateApiKeyRequest req,
                                                             @AuthenticationPrincipal UserDetails user) {

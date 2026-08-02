@@ -25,6 +25,7 @@ import java.util.UUID;
 public class BackupAdminController {
 
     private final BackupService backupService;
+    private final com.zgate.controlcenter.service.AuditService audit;
 
     /** Fleet-wide backup records (paged, newest first by creation). */
     @GetMapping
@@ -59,5 +60,26 @@ public class BackupAdminController {
     @ResponseMessage(code = "BACKUP_PLAN_UPDATED", value = "Backup plan updated")
     public ResponseEntity<BackupPlan> upsertPlan(@PathVariable UUID orgId, @RequestBody BackupPlan plan) {
         return ResponseEntity.ok(backupService.upsertPlan(orgId, plan));
+    }
+
+    /**
+     * Operator-assisted recovery: a short-lived presigned download of a completed backup's
+     * CIPHERTEXT. Zero-knowledge holds — the customer's passphrase decrypts it, never Control
+     * Center — so this is for handing a recovering customer their own bytes, and it is
+     * SUPER_ADMIN + audited because it is still an export of a customer's database dump.
+     */
+    @PostMapping("/org/{orgId}/{backupId}/restore-url")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @ResponseMessage(code = "BACKUP_RESTORE_URL", value = "Download link created (valid ~30 minutes)")
+    public ResponseEntity<java.util.Map<String, String>> restoreUrl(
+            @PathVariable UUID orgId, @PathVariable UUID backupId,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+            org.springframework.security.core.userdetails.UserDetails user) {
+        String url = backupService.restoreUrl(orgId, backupId);
+        audit.log(user.getUsername(), user.getUsername(), "BACKUP_RESTORE_URL_ISSUED",
+                  "BackupRecord", backupId.toString(), orgId, null,
+                  "ciphertext download link issued to operator",
+                  com.zgate.controlcenter.domain.AuditLog.Status.SUCCESS);
+        return ResponseEntity.ok(java.util.Map.of("downloadUrl", url));
     }
 }

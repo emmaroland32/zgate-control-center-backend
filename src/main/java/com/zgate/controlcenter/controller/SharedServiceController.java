@@ -48,6 +48,12 @@ public class SharedServiceController {
 
     // --- Organization subscriptions ---
 
+    /** Fleet quota posture — current-month usage vs limit for every enabled subscription. */
+    @GetMapping("/quotas")
+    public ResponseEntity<List<com.zgate.controlcenter.service.SharedServiceManager.QuotaRow>> quotas() {
+        return ResponseEntity.ok(manager.quotaOverview());
+    }
+
     @GetMapping("/subscriptions")
     public ResponseEntity<List<OrgServiceSubscription>> getAllSubscriptions() {
         return ResponseEntity.ok(manager.getAllSubscriptions());

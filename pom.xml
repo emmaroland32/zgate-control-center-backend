@@ -137,6 +137,12 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
         </dependency>
+        <!-- AWS Cost Explorer — backs per-customer infrastructure cost ingestion for vendor-hosted
+             stacks. Inert unless controlcenter.cost.enabled=true. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>costexplorer</artifactId>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>url-connection-client</artifactId>
@@ -152,6 +158,18 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <!-- Distributed scheduled-job locking: lets a second Control Center replica run without
+             double-invoicing, double-renewing licenses, or double-advancing rollouts. -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>6.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>6.3.0</version>
         </dependency>
     </dependencies>
 

@@ -55,6 +55,7 @@ public class DeploymentController {
     }
 
     @PatchMapping("/{id}/status")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<Deployment> updateStatus(@PathVariable UUID id,
                                                     @RequestBody StatusUpdate body) {
         return ResponseEntity.ok(service.updateStatus(id, body.getStatus(), body.getLogs()));

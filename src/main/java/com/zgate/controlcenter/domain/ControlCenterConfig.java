@@ -21,7 +21,19 @@ public class ControlCenterConfig {
     private String configKey;
 
     @Column(columnDefinition = "TEXT")
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private String value;
+
+    /**
+     * Serialized form of {@link #value}: a row flagged {@code isSecret} returns a marker instead of
+     * the stored value. Operators type registry passwords and API tokens into these rows, and the
+     * read endpoints are visible to every admin — the value itself never needs to leave the server.
+     */
+    @com.fasterxml.jackson.annotation.JsonProperty("value")
+    public String getMaskedValue() {
+        if (!isSecret) return value;
+        return value == null || value.isBlank() ? null : "••••••••";
+    }
 
     @Column(length = 500)
     private String description;

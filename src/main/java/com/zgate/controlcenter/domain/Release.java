@@ -27,6 +27,17 @@ public class Release {
 
     private String dockerRegistry;
 
+    /**
+     * The cosign-signed digest of the published backend image ({@code sha256:…}). When present it is
+     * rendered into provisioning specs so stacks pull by immutable digest, and the runtime
+     * image-digest gate has a value to enforce. Blank means tag-only (digest gate stays advisory).
+     */
+    @Column(length = 80)
+    private String imageDigest;
+
+    @Column(length = 80)
+    private String webImageDigest;
+
     @Column(columnDefinition = "TEXT")
     private String releaseNotes;
 

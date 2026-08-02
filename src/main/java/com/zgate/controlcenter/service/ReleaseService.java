@@ -53,12 +53,18 @@ public class ReleaseService {
             .channel(req.getChannel())
             .dockerTag(req.getDockerTag())
             .dockerRegistry(req.getDockerRegistry())
+            .imageDigest(blankToNull(req.getImageDigest()))
+            .webImageDigest(blankToNull(req.getWebImageDigest()))
             .releaseNotes(req.getReleaseNotes())
             .hasBreakingChanges(req.isHasBreakingChanges())
             .migrations(req.getMigrations())
             .isLatest(req.isLatest())
             .publishedBy(publishedBy)
             .build());
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     @CacheEvict(value = "releases", allEntries = true)

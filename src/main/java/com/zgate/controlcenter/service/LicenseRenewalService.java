@@ -38,6 +38,7 @@ public class LicenseRenewalService {
 
     /** Daily at 02:30 by default. */
     @Scheduled(cron = "${controlcenter.license.renewalCron:0 30 2 * * *}")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "licenseRenewal", lockAtMostFor = "PT30M")
     public void renewDueLicenses() {
         if (!autoRenew) {
             log.debug("License auto-renewal disabled");

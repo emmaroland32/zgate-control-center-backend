@@ -42,6 +42,7 @@ public class AlertEvaluator {
     private final LicenseRepository licenseRepo;
 
     @Scheduled(fixedDelayString = "${controlcenter.alerts.evaluator.intervalMs:300000}", initialDelay = 60_000)
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "alertEvaluator", lockAtMostFor = "PT5M")
     public void evaluate() {
         List<AlertRule> rules = ruleRepo.findAll();
         for (AlertRule rule : rules) {

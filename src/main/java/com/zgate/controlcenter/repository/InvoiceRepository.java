@@ -13,4 +13,6 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     List<Invoice> findByOrganizationIdOrderByCreatedAtDesc(UUID orgId);
     List<Invoice> findByOrganizationIdAndPeriodStartBetween(UUID orgId, LocalDate from, LocalDate to);
     boolean existsByInvoiceNumber(String invoiceNumber);
+    List<Invoice> findByOrganizationIdAndTypeAndStatusIn(UUID orgId, Invoice.Type type,
+                                                         List<Invoice.Status> statuses);
 }

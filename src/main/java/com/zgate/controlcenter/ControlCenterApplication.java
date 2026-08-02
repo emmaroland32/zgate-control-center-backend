@@ -6,7 +6,6 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-import java.util.Map;
 
 @SpringBootApplication
 @EnableCaching
@@ -14,11 +13,10 @@ import java.util.Map;
 @EnableAsync
 public class ControlCenterApplication {
     public static void main(String[] args) {
+        // No default profile. Defaulting to 'dev' meant an install that merely forgot
+        // SPRING_PROFILES_ACTIVE ran with dev semantics (relaxed Flyway validation, debug logging)
+        // while believing it was production. An unconfigured boot now uses the base profile only.
         SpringApplication app = new SpringApplication(ControlCenterApplication.class);
-        // Default to 'dev' profile when SPRING_PROFILES_ACTIVE is not set.
-        // Production deployments must set SPRING_PROFILES_ACTIVE=prod which
-        // takes precedence and causes Spring Boot to ignore this default.
-        app.setDefaultProperties(Map.of("spring.profiles.default", "dev"));
         app.run(args);
     }
 }

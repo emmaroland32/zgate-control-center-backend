@@ -21,7 +21,8 @@ public class Webhook {
     @Column(nullable = false, length = 1000)
     private String url;
 
-    /** SHA-256 hash of the raw HMAC signing secret */
+    /** SHA-256 hash of the raw HMAC signing secret. Never serialized. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private String secretHash;
 
     /** JSON array of event types, e.g. ["DEPLOYMENT_SUCCESS","LICENSE_EXPIRY"] */
@@ -31,7 +32,11 @@ public class Webhook {
     @Column(nullable = false)
     private boolean enabled;
 
-    /** JSON map of extra HTTP headers to include on delivery */
+    /**
+     * JSON map of extra HTTP headers sent on delivery — by design this holds third-party
+     * Authorization values, so it is write-only: never returned on a read.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(columnDefinition = "TEXT")
     private String headers;
 

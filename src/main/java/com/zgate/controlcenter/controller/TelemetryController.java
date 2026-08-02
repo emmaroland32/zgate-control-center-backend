@@ -88,6 +88,7 @@ public class TelemetryController {
     // ----------------------------------------------------------------
 
     @PostMapping("/{id}/acknowledge")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','SUPPORT')")
     @ResponseMessage(code = "EVENT_ACKNOWLEDGED", value = "Acknowledged")
     public ResponseEntity<TelemetryEvent> acknowledge(
             @PathVariable UUID id,
@@ -96,6 +97,7 @@ public class TelemetryController {
     }
 
     @PostMapping("/acknowledge-all")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','SUPPORT')")
     @ResponseMessage(code = "EVENTS_ACKNOWLEDGED", value = "Acknowledged")
     public ResponseEntity<?> acknowledgeAll(
             @RequestParam(required = false) UUID orgId,
@@ -110,6 +112,7 @@ public class TelemetryController {
     // ----------------------------------------------------------------
 
     @GetMapping("/export/csv")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','SUPPORT')")
     public ResponseEntity<byte[]> exportCsv(
             @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) TelemetryEvent.Level level,

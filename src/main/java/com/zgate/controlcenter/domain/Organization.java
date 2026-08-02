@@ -71,6 +71,24 @@ public class Organization {
     private Integer licenseTtlDays;
 
     /**
+     * What a month of the platform subscription costs this org — drives automatic renewal
+     * invoicing ahead of {@link #subscriptionValidUntil}. NULL = billed out of band / unmanaged.
+     */
+    @Column(precision = 12, scale = 2)
+    private java.math.BigDecimal subscriptionMonthlyFee;
+
+    /**
+     * Contractual change window. When set, orchestrator-initiated applies run only inside
+     * [start, end) in {@link #maintenanceTimezone} (a window with start > end wraps midnight).
+     * NULL = no restriction. Manual operator applies are never gated — an incident fix must not
+     * wait for a window.
+     */
+    private java.time.LocalTime maintenanceWindowStart;
+    private java.time.LocalTime maintenanceWindowEnd;
+    @Column(length = 64)
+    private String maintenanceTimezone;
+
+    /**
      * Entitled number of concurrent installs. The instance registry (distinct machine fingerprints
      * reported within a window) is compared to this; more live installs than this = a copied /
      * over-deployed license. NULL = unmanaged (no concurrent-use check).

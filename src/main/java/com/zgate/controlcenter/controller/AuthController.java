@@ -25,16 +25,38 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
-        // Let BadCredentialsException propagate to GlobalExceptionHandler so login errors use the
-        // same coded envelope as the rest of the API (401 INVALID_CREDENTIALS), not a hand-built body.
-        Authentication auth = authManager.authenticate(
-            new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+        // Lockout first: without it this endpoint is an unthrottled oracle — both for passwords
+        // and, once a password is known, for brute-forcing the 6-digit second factor.
+        userService.requireNotLockedOut(req.getEmail());
+
+        Authentication auth;
+        try {
+            // Let BadCredentialsException propagate to GlobalExceptionHandler so login errors use
+            // the same coded envelope as the rest of the API (401 INVALID_CREDENTIALS).
+            auth = authManager.authenticate(
+                new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            userService.recordFailedLogin(req.getEmail());
+            throw e;
+        }
+
+        // Second factor AFTER the password check, so a wrong password never reveals whether the
+        // account has MFA. MFA_REQUIRED (valid password, no/blank code) tells the UI to show the
+        // code field; a present-but-wrong code is MFA_INVALID and counts toward the lockout.
+        try {
+            userService.requireMfaIfEnabled(req.getEmail(), req.getMfaCode());
+        } catch (com.zgate.controlcenter.exception.ControlCenterException e) {
+            if ("MFA_INVALID".equals(e.getCode())) userService.recordFailedLogin(req.getEmail());
+            throw e;
+        }
 
         String role = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .findFirst().orElse("ROLE_VIEWER");
 
-        String token = jwtUtils.generateToken(req.getEmail(), role);
+        String token = jwtUtils.generateToken(req.getEmail(), role,
+            userService.tokenVersionOf(req.getEmail()));
+        userService.recordSuccessfulLogin(req.getEmail());
         userService.recordLogin(req.getEmail());
 
         return ResponseEntity.ok(Map.of(

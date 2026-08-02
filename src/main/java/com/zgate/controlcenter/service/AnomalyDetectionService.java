@@ -260,7 +260,7 @@ public class AnomalyDetectionService {
      * Compare dotted numeric versions on the first {@code components} parts ({@code 0} = all), ignoring
      * any non-numeric suffix. &gt;0 if {@code a} newer than {@code b}. Unparseable → 0 (never flags).
      */
-    static int compareVersions(String a, String b, int components) {
+    public static int compareVersions(String a, String b, int components) {
         int[] va = parse(a), vb = parse(b);
         if (va == null || vb == null) return 0;
         int n = components > 0 ? components : Math.max(va.length, vb.length);

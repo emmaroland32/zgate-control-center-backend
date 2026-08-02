@@ -78,6 +78,14 @@ public class BillingController {
         return ResponseEntity.ok(billingService.markPaid(id));
     }
 
+    /** Cancel an unpaid invoice — the escape hatch for a mis-raised renewal. Paid ones are refused. */
+    @PostMapping("/invoices/{id}/cancel")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
+    @ResponseMessage(code = "INVOICE_CANCELLED", value = "Invoice cancelled")
+    public ResponseEntity<Invoice> cancel(@PathVariable UUID id) {
+        return ResponseEntity.ok(billingService.cancel(id));
+    }
+
     @GetMapping("/invoices/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID id) {
         Invoice invoice = invoiceRepo.findById(id)

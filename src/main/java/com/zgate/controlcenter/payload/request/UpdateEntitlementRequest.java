@@ -27,4 +27,15 @@ public class UpdateEntitlementRequest {
 
     /** Licensed deployment topology (SINGLE_NODE | HIGH_AVAILABILITY | MULTI_REGION). Null = no tier check. */
     private Organization.DeploymentTier deploymentTier;
+
+    /** Monthly platform-subscription price — drives automatic renewal invoicing. Null = billed out of band. */
+    private java.math.BigDecimal subscriptionMonthlyFee;
+
+    /**
+     * Contractual change window: orchestrator-initiated applies run only inside it (org-local
+     * time; start after end wraps midnight). All three null = no restriction.
+     */
+    private java.time.LocalTime maintenanceWindowStart;
+    private java.time.LocalTime maintenanceWindowEnd;
+    private String maintenanceTimezone;
 }

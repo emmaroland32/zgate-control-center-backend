@@ -30,6 +30,7 @@ public class IntegrationService {
     private final WebhookDeliveryRepository deliveryRepo;
     private final ApiKeyRepository apiKeyRepo;
     private final IntegrationConfigRepository integrationConfigRepo;
+    private final WebhookUrlValidator urlValidator;
 
     // ----------------------------------------------------------------
     // Webhooks
@@ -41,6 +42,9 @@ public class IntegrationService {
 
     @Transactional
     public Webhook createWebhook(Webhook webhook, String createdBy) {
+        // Refuse internal targets up front: Control Center delivers from the host holding cloud
+        // and signing credentials, so an internal URL here is an SSRF primitive.
+        urlValidator.validate(webhook.getUrl());
         webhook.setCreatedBy(createdBy);
         if (webhook.getSecretHash() != null && !webhook.getSecretHash().isBlank()) {
             // Caller passes the raw secret; we store only its SHA-256 hash
@@ -53,6 +57,7 @@ public class IntegrationService {
     public Webhook updateWebhook(UUID id, Webhook patch) {
         Webhook existing = webhookRepo.findById(id)
                 .orElseThrow(() -> new ControlCenterException("Webhook not found: " + id));
+        urlValidator.validate(patch.getUrl());
         existing.setName(patch.getName());
         existing.setUrl(patch.getUrl());
         existing.setEvents(patch.getEvents());

@@ -31,6 +31,10 @@ public interface BackupRecordRepository extends JpaRepository<BackupRecord, UUID
 
     long countByOrganizationIdAndStatus(UUID organizationId, BackupRecord.Status status);
 
+    /** The org's most recent successful backup — the fleet view's freshness signal. */
+    Optional<BackupRecord> findFirstByOrganizationIdAndStatusOrderByCompletedAtDesc(
+            UUID organizationId, BackupRecord.Status status);
+
     /** Completed backups whose retention window has elapsed — due for purge. */
     List<BackupRecord> findByStatusAndExpiresAtBefore(BackupRecord.Status status, LocalDateTime cutoff);
 

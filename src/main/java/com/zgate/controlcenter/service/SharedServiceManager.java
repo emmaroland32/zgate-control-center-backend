@@ -59,6 +59,40 @@ public class SharedServiceManager {
 
     // --- Subscriptions ---
 
+    /**
+     * Fleet quota posture: every enabled subscription with its current-month call usage against
+     * its limit. Null limit = unmetered (shown, never flagged). Replaces the mock quotas screen.
+     */
+    public List<QuotaRow> quotaOverview() {
+        java.time.LocalDate monthStart = java.time.LocalDate.now().withDayOfMonth(1);
+        java.util.Map<java.util.UUID, String> serviceNames = new java.util.HashMap<>();
+        serviceRepo.findAll().forEach(sv -> serviceNames.put(sv.getId(), sv.getName()));
+        java.util.List<QuotaRow> out = new java.util.ArrayList<>();
+        for (OrgServiceSubscription sub : subscriptionRepo.findAll()) {
+            if (!sub.isEnabled()) continue;
+            String orgName = orgRepo.findById(sub.getOrganizationId())
+                .map(com.zgate.controlcenter.domain.Organization::getName)
+                .orElse(sub.getOrganizationId().toString());
+            long used = usageRepo
+                .findByOrganizationIdAndServiceIdAndPeriodStart(
+                    sub.getOrganizationId(), sub.getServiceId(), monthStart)
+                .map(u -> u.getCallCount() == null ? 0L : u.getCallCount())
+                .orElse(0L);
+            Double pct = sub.getCallLimit() == null || sub.getCallLimit() == 0 ? null
+                : Math.round(used * 10000.0 / sub.getCallLimit()) / 100.0;
+            out.add(new QuotaRow(sub.getOrganizationId(), orgName,
+                sub.getServiceId(), serviceNames.getOrDefault(sub.getServiceId(), "?"),
+                sub.getCallLimit(), used, pct));
+        }
+        out.sort(java.util.Comparator
+            .comparing((QuotaRow r) -> r.usedPct() == null ? -1.0 : r.usedPct()).reversed());
+        return out;
+    }
+
+    public record QuotaRow(java.util.UUID organizationId, String orgName,
+                           java.util.UUID serviceId, String serviceName,
+                           Long callLimit, long usedThisMonth, Double usedPct) {}
+
     public List<OrgServiceSubscription> getAllSubscriptions() {
         return subscriptionRepo.findAll();
     }

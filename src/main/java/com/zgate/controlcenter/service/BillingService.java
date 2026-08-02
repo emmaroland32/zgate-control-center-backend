@@ -44,15 +44,22 @@ public class BillingService {
     @Value("${controlcenter.billing.currencyDefault:USD}")
     private String defaultCurrency;
 
+    /** Self-proxy: a direct call to generateInvoice from the scheduled loop would bypass the
+     *  transactional proxy, letting a half-written invoice (header without its lines) commit. */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BillingService self;
+
     // Auto-generate invoices on 1st of each month at 02:00
     @Scheduled(cron = "0 0 2 1 * *")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "monthlyInvoices", lockAtMostFor = "PT30M")
     public void autoGenerateMonthlyInvoices() {
         LocalDate lastMonthStart = LocalDate.now().minusMonths(1).withDayOfMonth(1);
         LocalDate lastMonthEnd = lastMonthStart.plusMonths(1).minusDays(1);
         log.info("Auto-generating invoices for period {} to {}", lastMonthStart, lastMonthEnd);
         orgRepo.findAll().forEach(org -> {
             try {
-                generateInvoice(org.getId(), lastMonthStart, lastMonthEnd, "SYSTEM");
+                self.generateInvoice(org.getId(), lastMonthStart, lastMonthEnd, "SYSTEM");
             } catch (Exception e) {
                 log.warn("Failed to generate invoice for org {}: {}", org.getId(), e.getMessage());
             }
@@ -84,10 +91,14 @@ public class BillingService {
                     "BACKUP_CURRENCY_MISMATCH", HttpStatus.CONFLICT);
         }
 
+        // Sum the ALREADY-ROUNDED per-line amounts so the header foots to its own line items by
+        // construction. Summing raw 4dp costs and letting the DB round the total silently breaks
+        // Σ(lines) == subtotal by a cent (sum-of-rounds vs round-of-sums).
         BigDecimal subtotal = usages.stream()
-            .map(ServiceUsage::getCostUsd)
+            .map(u -> u.getCostUsd().setScale(2, RoundingMode.HALF_UP))
             .reduce(BigDecimal.ZERO, BigDecimal::add)
-            .add(backup != null ? backup.totalPrice() : BigDecimal.ZERO);
+            .add(backup != null ? backup.totalPrice() : BigDecimal.ZERO)
+            .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal taxAmount = subtotal.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = subtotal.add(taxAmount);
@@ -159,11 +170,60 @@ public class BillingService {
         }
     }
 
+    /**
+     * Mark an invoice paid. For a SUBSCRIPTION invoice this is the moment the money buys something:
+     * the org's paid-through date moves to the invoice's period end, which is what keeps the license
+     * renewal job issuing licenses (the kill switch stays open because the customer actually paid).
+     *
+     * <p>{@code max(current, periodEnd)} — a late-paid older invoice must never PULL BACK a
+     * paid-through date a newer payment already advanced.
+     */
+    @Transactional
     public Invoice markPaid(UUID invoiceId) {
         Invoice invoice = invoiceRepo.findById(invoiceId)
             .orElseThrow(() -> new ControlCenterException("Invoice not found"));
+        if (invoice.getStatus() == Invoice.Status.CANCELLED) {
+            throw new ControlCenterException("A cancelled invoice cannot be marked paid.",
+                "INVOICE_CANCELLED", HttpStatus.CONFLICT);
+        }
+        // Idempotent: paying twice must not smear paidAt (the original payment timestamp is the
+        // audit fact) and must not re-run the extension.
+        if (invoice.getStatus() == Invoice.Status.PAID) return invoice;
+
         invoice.setStatus(Invoice.Status.PAID);
         invoice.setPaidAt(LocalDateTime.now());
+        invoice = invoiceRepo.save(invoice);
+
+        if (invoice.getType() == Invoice.Type.SUBSCRIPTION) {
+            // GREATEST in the database, not a Java max(): two concurrent payments doing
+            // read-compare-write are last-writer-wins and can move the paid-through date BACKWARDS
+            // — which the license renewal job then reads as a lapse (the kill switch).
+            LocalDateTime paidThrough = invoice.getPeriodEnd().plusDays(1).atStartOfDay();
+            int updated = orgRepo.advanceSubscriptionPaidThrough(invoice.getOrganizationId(), paidThrough);
+            if (updated == 0) {
+                throw new ControlCenterException("Organization not found");
+            }
+            log.info("Org {} subscription advanced to (at least) {} by invoice {}",
+                     invoice.getOrganizationId(), paidThrough, invoice.getInvoiceNumber());
+        }
+        return invoice;
+    }
+
+    /**
+     * Cancel an unpaid invoice. This is the escape hatch for a mis-raised renewal: an open
+     * SUBSCRIPTION invoice blocks future renewals for its period (the double-billing guard), so
+     * without cancel a wrong one could only be cleared by marking it paid or database surgery.
+     */
+    @Transactional
+    public Invoice cancel(UUID invoiceId) {
+        Invoice invoice = invoiceRepo.findById(invoiceId)
+            .orElseThrow(() -> new ControlCenterException("Invoice not found"));
+        if (invoice.getStatus() == Invoice.Status.PAID) {
+            throw new ControlCenterException(
+                "A paid invoice cannot be cancelled — issue a correction/credit instead.",
+                "INVOICE_ALREADY_PAID", HttpStatus.CONFLICT);
+        }
+        invoice.setStatus(Invoice.Status.CANCELLED);
         return invoiceRepo.save(invoice);
     }
 
@@ -207,7 +267,13 @@ public class BillingService {
     private String generateInvoiceNumber() {
         String prefix = "ZGN-" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
         long count = invoiceRepo.count() + 1;
-        return prefix + "-" + String.format("%04d", count);
+        // count()+1 collides under concurrency (two generates racing, or racing a scheduled job);
+        // walk forward until free rather than failing the unique constraint and losing the invoice.
+        String candidate = prefix + "-" + String.format("%04d", count);
+        while (invoiceRepo.existsByInvoiceNumber(candidate)) {
+            candidate = prefix + "-" + String.format("%04d", ++count);
+        }
+        return candidate;
     }
 
     private String buildInvoiceHtml(Invoice inv, Organization org) {

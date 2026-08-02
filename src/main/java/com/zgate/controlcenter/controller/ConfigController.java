@@ -23,30 +23,37 @@ public class ConfigController {
     private final ControlCenterConfigService service;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<ControlCenterConfig>> findAll() {
         return ResponseEntity.ok(service.findAll());
     }
 
     @GetMapping("/{key}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<ControlCenterConfig> findByKey(@PathVariable String key) {
         return ResponseEntity.ok(service.findByKey(key));
     }
 
     @GetMapping("/category/{cat}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<List<ControlCenterConfig>> findByCategory(@PathVariable String cat) {
         return ResponseEntity.ok(service.findByCategory(cat));
     }
 
     @PutMapping("/{key}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "CONFIG_SAVED", value = "Setting saved")
     public ResponseEntity<ControlCenterConfig> upsert(@PathVariable String key,
                                                @RequestBody Map<String, String> body,
                                                @AuthenticationPrincipal UserDetails user) {
-        String updatedBy = body.getOrDefault("updatedBy", user.getUsername());
+        // Actor is server-derived: honouring a body-supplied updatedBy let an admin attribute a
+        // config change to a different operator, forging the console's own audit trail.
+        String updatedBy = user.getUsername();
         return ResponseEntity.ok(service.upsert(key, body.get("value"), updatedBy));
     }
 
     @PostMapping("/batch")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "CONFIG_SAVED", value = "Settings saved")
     public ResponseEntity<List<ControlCenterConfig>> updateBatch(@RequestBody List<Map<String, String>> updates,
                                                           @AuthenticationPrincipal UserDetails user) {
@@ -54,6 +61,7 @@ public class ConfigController {
     }
 
     @PostMapping("/test-registry")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<Map<String, Object>> testRegistry(@RequestBody Map<String, String> body) {
         return ResponseEntity.ok(service.testRegistryConnection(
             body.getOrDefault("url", ""), body.get("username"), body.get("password")));

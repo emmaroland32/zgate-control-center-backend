@@ -13,4 +13,8 @@ public interface AlertRepository extends JpaRepository<Alert, UUID> {
     List<Alert> findByOrganizationIdAndStatus(UUID orgId, Alert.Status status);
     long countBySeverityAndStatus(AlertRule.Severity severity, Alert.Status status);
     List<Alert> findByRuleIdAndStatusIn(UUID ruleId, List<Alert.Status> statuses);
+
+    /** Firing alerts the dispatcher still owes a notification, oldest first, attempts bounded. */
+    List<Alert> findTop50ByStatusAndNotifiedAtNullAndNotifyAttemptsLessThanOrderByFiredAtAsc(
+            Alert.Status status, int maxAttempts);
 }

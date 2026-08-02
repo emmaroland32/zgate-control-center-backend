@@ -146,8 +146,14 @@ public class LicenseService {
         return RenewalOutcome.RENEWED;
     }
 
-    /** An org is entitled while its subscription is unset (perpetual/unmanaged) or still valid. */
-    static boolean isEntitled(Organization org, LocalDateTime now) {
+    /**
+     * An org is entitled while its subscription is unset (perpetual/unmanaged) or still valid.
+     *
+     * <p>Public because the provisioning subpackage gates on it too: a lapsed customer must not be
+     * able to obtain a freshly provisioned deployment any more than they can pull a new image.
+     * Both paths deliberately consult this one predicate rather than reimplementing the rule.
+     */
+    public static boolean isEntitled(Organization org, LocalDateTime now) {
         LocalDateTime until = org.getSubscriptionValidUntil();
         return until == null || until.isAfter(now);
     }

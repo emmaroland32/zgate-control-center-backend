@@ -24,18 +24,21 @@ public class AlertController {
     public ResponseEntity<List<AlertRule>> rules() { return ResponseEntity.ok(service.findAllRules()); }
 
     @PostMapping("/rules")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "ALERT_RULE_CREATED", value = "Alert rule created")
     public ResponseEntity<AlertRule> createRule(@RequestBody AlertRule rule) {
         return ResponseEntity.ok(service.createRule(rule));
     }
 
     @PutMapping("/rules/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "ALERT_RULE_UPDATED", value = "Alert rule updated")
     public ResponseEntity<AlertRule> updateRule(@PathVariable UUID id, @RequestBody AlertRule rule) {
         return ResponseEntity.ok(service.updateRule(id, rule));
     }
 
     @DeleteMapping("/rules/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "ALERT_RULE_DELETED", value = "Alert rule deleted")
     public ResponseEntity<?> deleteRule(@PathVariable UUID id) {
         service.deleteRule(id);
@@ -44,6 +47,7 @@ public class AlertController {
 
     /** Enable/disable a rule without wiping its other columns (the PUT path required a full body). */
     @PatchMapping("/rules/{id}/toggle")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "ALERT_RULE_TOGGLED", value = "Alert rule updated")
     public ResponseEntity<AlertRule> toggleRule(@PathVariable UUID id) {
         return ResponseEntity.ok(service.toggleRule(id));
@@ -56,12 +60,14 @@ public class AlertController {
     public ResponseEntity<List<Alert>> all() { return ResponseEntity.ok(service.findAll()); }
 
     @PostMapping("/{id}/acknowledge")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','SUPPORT')")
     @ResponseMessage(code = "ALERT_ACKNOWLEDGED", value = "Alert acknowledged")
     public ResponseEntity<Alert> ack(@PathVariable UUID id, @AuthenticationPrincipal UserDetails user) {
         return ResponseEntity.ok(service.acknowledge(id, user.getUsername()));
     }
 
     @PostMapping("/{id}/resolve")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','SUPPORT')")
     @ResponseMessage(code = "ALERT_RESOLVED", value = "Alert resolved")
     public ResponseEntity<Alert> resolve(@PathVariable UUID id) {
         return ResponseEntity.ok(service.resolve(id));

@@ -135,6 +135,14 @@ public class OrganizationService {
         org.setLicenseTtlDays(req.getLicenseTtlDays());
         org.setMaxInstances(req.getMaxInstances());
         org.setDeploymentTier(req.getDeploymentTier());
+        org.setSubscriptionMonthlyFee(req.getSubscriptionMonthlyFee());
+        if (req.getMaintenanceTimezone() != null && !req.getMaintenanceTimezone().isBlank()) {
+            // Fail loudly at write time — a typo'd zone silently failing open at apply time is worse.
+            java.time.ZoneId.of(req.getMaintenanceTimezone());
+        }
+        org.setMaintenanceWindowStart(req.getMaintenanceWindowStart());
+        org.setMaintenanceWindowEnd(req.getMaintenanceWindowEnd());
+        org.setMaintenanceTimezone(req.getMaintenanceTimezone());
         return orgRepo.save(org);
     }
 

@@ -265,6 +265,7 @@ public class BackupService {
      * toward the quota and any partial S3 object is purged. All S3 deletes fire post-commit.
      */
     @Scheduled(fixedDelayString = "${controlcenter.backup.expirySweepMs:3600000}")
+    @net.javacrumbs.shedlock.spring.annotation.SchedulerLock(name = "backupExpirySweep", lockAtMostFor = "PT30M")
     @Transactional
     public void expireDueBackups() {
         if (!storage.isEnabled()) return;

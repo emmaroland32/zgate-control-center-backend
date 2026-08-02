@@ -21,6 +21,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtils jwtUtils;
     private final UserDetailsServiceImpl userDetailsService;
+    private final com.zgate.controlcenter.repository.ControlCenterUserRepository userRepo;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -29,11 +30,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String token = parseJwt(request);
         if (token != null && jwtUtils.validateToken(token)) {
             String email = jwtUtils.getEmailFromToken(token);
-            UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-            UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-            auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(auth);
+            // A token whose version no longer matches the user's has been revoked — a signature
+            // check alone would happily accept it until expiry, which is what made the old
+            // "revoke sessions" a fiction.
+            boolean revoked = userRepo.findByEmail(email)
+                .map(u -> u.getTokenVersion() != jwtUtils.getTokenVersion(token))
+                .orElse(true);
+            if (!revoked) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                // A disabled account must not authenticate on the bearer path either — only the
+                // login path ran this check before, so deactivation left live tokens working.
+                if (userDetails.isEnabled()) {
+                    UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            }
         }
         filterChain.doFilter(request, response);
     }

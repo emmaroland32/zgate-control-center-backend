@@ -35,6 +35,14 @@ public class Alert {
     private String message;
 
     private Double metricValue;
+
+    /** When any notification channel accepted this alert. Null = the dispatcher still owes it. */
+    private LocalDateTime notifiedAt;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private int notifyAttempts = 0;
+
     private String acknowledgedBy;
     private LocalDateTime acknowledgedAt;
     private LocalDateTime resolvedAt;
