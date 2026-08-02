@@ -99,6 +99,18 @@ public class ProvisioningService {
             "Infrastructure stack not found: " + id, "STACK_NOT_FOUND", HttpStatus.NOT_FOUND));
     }
 
+    /**
+     * Read a stack with its row locked, for the paths that check {@code isBusy()} and then claim it.
+     *
+     * <p>Without the lock that sequence races: two operators — or two replicas — both see the stack
+     * idle and both launch Terraform against the same remote state. Callers are {@code @Transactional},
+     * so the lock is held until the claiming status write commits.
+     */
+    private InfrastructureStack lockStack(UUID id) {
+        return stackRepo.findByIdForUpdate(id).orElseThrow(() -> new ControlCenterException(
+            "Infrastructure stack not found: " + id, "STACK_NOT_FOUND", HttpStatus.NOT_FOUND));
+    }
+
     public Page<ProvisioningRun> runsForStack(UUID stackId, Pageable pageable) {
         return runRepo.findByStackIdOrderByCreatedAtDesc(stackId, pageable);
     }
@@ -166,6 +178,13 @@ public class ProvisioningService {
                 .createdBy(actor)
                 .build());
 
+        // An EXISTING stack must be re-read under a row lock before the busy check, for the same
+        // reason as the claim paths below. A brand-new one has no row to lock yet; two concurrent
+        // creates collide on uq_infra_stack instead.
+        if (stack.getId() != null) {
+            stack = lockStack(stack.getId());
+        }
+
         if (stack.isBusy()) {
             throw new ControlCenterException(
                 "This stack already has a " + stack.getStatus() + " run in flight. Wait for it to finish.",
@@ -207,7 +226,7 @@ public class ProvisioningService {
     @Transactional
     public ProvisioningRun upgrade(UUID stackId, UUID releaseId, String actor) {
         requireReady();
-        InfrastructureStack stack = findStack(stackId);
+        InfrastructureStack stack = lockStack(stackId);
 
         if (stack.isBusy()) {
             throw new ControlCenterException(
@@ -257,7 +276,7 @@ public class ProvisioningService {
     @Transactional
     public ProvisioningRun apply(UUID stackId, String actor) {
         requireReady();
-        InfrastructureStack stack = findStack(stackId);
+        InfrastructureStack stack = lockStack(stackId);
 
         if (stack.isBusy()) {
             throw new ControlCenterException(
@@ -281,7 +300,7 @@ public class ProvisioningService {
     @Transactional
     public ProvisioningRun refresh(UUID stackId, String actor) {
         requireReady();
-        InfrastructureStack stack = findStack(stackId);
+        InfrastructureStack stack = lockStack(stackId);
 
         if (stack.isBusy()) {
             throw new ControlCenterException("This stack has a run in flight.", "STACK_BUSY", HttpStatus.CONFLICT);
@@ -312,7 +331,7 @@ public class ProvisioningService {
     @Transactional
     public ProvisioningRun destroy(UUID stackId, String confirmation, String actor) {
         requireReady();
-        InfrastructureStack stack = findStack(stackId);
+        InfrastructureStack stack = lockStack(stackId);
 
         Organization org = orgRepo.findById(stack.getOrganizationId()).orElseThrow(() ->
             new ControlCenterException("Organization not found", "ORGANIZATION_NOT_FOUND", HttpStatus.NOT_FOUND));

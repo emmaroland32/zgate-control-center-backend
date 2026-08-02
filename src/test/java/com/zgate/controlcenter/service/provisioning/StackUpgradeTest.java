@@ -86,6 +86,10 @@ class StackUpgradeTest {
             .releaseVersion(releaseVersion)
             .lastAppliedAt(LocalDateTime.now().minusDays(30))
             .build();
+        // The claim paths read the row FOR UPDATE, so that is the mock they exercise. Without
+        // the lock, two replicas both see the stack idle and both launch Terraform against the
+        // same remote state.
+        when(stackRepo.findByIdForUpdate(stackId)).thenReturn(Optional.of(s));
         when(stackRepo.findById(stackId)).thenReturn(Optional.of(s));
         return s;
     }
