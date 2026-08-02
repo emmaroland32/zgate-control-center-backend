@@ -36,7 +36,23 @@ public class AuditLog {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @PrePersist void prePersist() { createdAt = LocalDateTime.now(); }
+    /**
+     * HMAC-SHA256 over this row's content, signed at write time. NULL means the row predates
+     * signing or no key was configured — reported as "unsigned", never as "valid".
+     */
+    @Column(length = 64)
+    private String integrityHash;
+
+    /**
+     * Only stamps a timestamp that has not been set. AuditService sets it BEFORE signing, because
+     * createdAt is part of the signed content — overwriting it here made every freshly written row
+     * fail verification, since the signature covered a different instant than the one stored.
+     */
+    @PrePersist void prePersist() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
 
     public enum Status { SUCCESS, FAILURE, WARNING }
 }

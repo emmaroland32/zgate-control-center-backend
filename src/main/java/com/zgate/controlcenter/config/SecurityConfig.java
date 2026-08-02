@@ -28,6 +28,7 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final com.zgate.controlcenter.security.ServiceKeyAuthFilter serviceKeyAuthFilter;
     private final com.zgate.controlcenter.security.IpAllowlistFilter ipAllowlistFilter;
+    private final com.zgate.controlcenter.security.SecurityHeadersFilter securityHeadersFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -72,7 +73,10 @@ public class SecurityConfig {
             // authentication at all. No-op unless controlcenter.security.ipAllowlist is set, and
             // machine-to-machine endpoints are exempt (customer deployments phone home from
             // arbitrary addresses).
-            .addFilterBefore(ipAllowlistFilter, com.zgate.controlcenter.security.ServiceKeyAuthFilter.class);
+            .addFilterBefore(ipAllowlistFilter, com.zgate.controlcenter.security.ServiceKeyAuthFilter.class)
+            // Headers go on every response, including the 403 the allow-list writes, so it runs first.
+            .addFilterBefore(securityHeadersFilter,
+                             com.zgate.controlcenter.security.IpAllowlistFilter.class);
         return http.build();
     }
 }

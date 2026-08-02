@@ -1,5 +1,8 @@
 package com.zgate.controlcenter.security;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 /**
  * Matches a client IP against an allow-list entry — an exact address or an IPv4 CIDR range
  * (e.g. {@code 10.0.0.0/8}).
@@ -23,7 +26,7 @@ public final class IpMatcher {
         }
         entry = entry.trim();
         if (!entry.contains("/")) {
-            return entry.equals(clientIp);
+            return sameAddress(entry, clientIp);
         }
         String[] parts = entry.split("/");
         if (parts.length != 2) {
@@ -45,6 +48,34 @@ public final class IpMatcher {
         }
         long mask = prefix == 0 ? 0L : (0xFFFFFFFFL << (32 - prefix)) & 0xFFFFFFFFL;
         return (ip & mask) == (network & mask);
+    }
+
+    /**
+     * Exact-address comparison that survives formatting differences.
+     *
+     * <p>Raw string equality is not enough. A client on IPv6 loopback is reported by the servlet
+     * container as {@code 0:0:0:0:0:0:0:1} while an operator writes {@code ::1} — the same address,
+     * two spellings, and a string compare locks them out. Both sides are parsed to an
+     * {@link InetAddress} so any valid spelling of one address matches.
+     *
+     * <p>Loopback is additionally treated as one family: allow-listing {@code 127.0.0.1} means
+     * "from this machine", and being refused because the browser resolved localhost over IPv6 is a
+     * lockout with no diagnostic value. Every other address is matched exactly.
+     */
+    private static boolean sameAddress(String entry, String clientIp) {
+        if (entry.equals(clientIp)) {
+            return true;
+        }
+        try {
+            InetAddress a = InetAddress.getByName(entry);
+            InetAddress b = InetAddress.getByName(clientIp);
+            if (a.equals(b)) {
+                return true;
+            }
+            return a.isLoopbackAddress() && b.isLoopbackAddress();
+        } catch (UnknownHostException e) {
+            return false;   // unparseable — no match, never an accidental allow
+        }
     }
 
     /** True when {@code clientIp} matches any entry. An empty list means "no restriction". */
@@ -70,7 +101,17 @@ public final class IpMatcher {
         }
         String e = entry.trim();
         if (!e.contains("/")) {
-            return ipv4ToLong(e) >= 0;
+            if (ipv4ToLong(e) >= 0) {
+                return true;
+            }
+            // Accept IPv6 literals as exact entries. CIDR stays IPv4-only (documented above), but
+            // refusing "::1" at boot would be wrong when the console is reached over IPv6.
+            try {
+                InetAddress.getByName(e);
+                return e.contains(":");
+            } catch (UnknownHostException ex) {
+                return false;
+            }
         }
         String[] parts = e.split("/");
         if (parts.length != 2 || ipv4ToLong(parts[0]) < 0) {

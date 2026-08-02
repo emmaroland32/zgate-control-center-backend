@@ -58,6 +58,9 @@ public class SecretCipher {
     /** MFA secrets: a distinct purpose, so the two stores never share derived key material. */
     public static final String PURPOSE_MFA = "mfa-secret";
 
+    /** Audit-row signing. Separate again: a leak of one purpose's key must not forge the others. */
+    public static final String PURPOSE_AUDIT = "audit-integrity";
+
     private final String masterKeyB64;
     private final String keyringSpec;
     private final String activeKeyId;
@@ -207,6 +210,28 @@ public class SecretCipher {
             throw new ControlCenterException(
                 "Could not decrypt the stored credential. The encryption key may have changed.",
                 "CREDENTIAL_DECRYPT_FAILED", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * HMAC-SHA-256 over {@code content} under a purpose's derived subkey, hex-encoded.
+     *
+     * <p>For signing rather than encryption: an audit row must stay readable in the database (that
+     * is the point of an audit trail) while still being verifiable, so it is signed, not encrypted.
+     */
+    public String hmacHex(String content, String purpose) {
+        requireConfigured();
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(keyFor(activeKeyId, purpose));
+            byte[] out = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(out.length * 2);
+            for (byte b : out) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            log.error("Failed to sign content for purpose {}: {}", purpose, e.getClass().getSimpleName());
+            throw new ControlCenterException("Could not sign the record.",
+                "SIGNING_FAILED", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 

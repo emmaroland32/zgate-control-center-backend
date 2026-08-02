@@ -1,0 +1,22 @@
+-- ============================================================================
+-- Tamper-evidence for the audit trail
+-- ============================================================================
+-- audit_logs records who destroyed a customer's production system, who
+-- approved a fleet rollout, and who exported a database dump. Until now any
+-- row could be edited or removed in the database with no trace — and the
+-- database password has been recoverable from git history.
+--
+-- Each row is now signed with HMAC-SHA256 over its content, under a subkey
+-- derived for the 'audit-integrity' purpose (SecretCipher), so it shares no key
+-- material with the credential or MFA stores. The key never leaves the server,
+-- so an edit made directly in the database cannot produce a matching signature
+-- and is flagged by the verify endpoint.
+--
+-- HONEST LIMIT: a per-row HMAC detects CONTENT EDITS. It does not by itself
+-- detect row DELETION or REORDERING — that needs a linked hash chain over a
+-- serialized write path, which the main ZGATE backend also does not yet have.
+-- NULL means the row predates signing, or no encryption key was configured when
+-- it was written; those are reported as "unsigned", never as "valid".
+-- ============================================================================
+
+ALTER TABLE audit_logs ADD COLUMN integrity_hash VARCHAR(64);

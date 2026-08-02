@@ -127,6 +127,42 @@ class IpAllowlistFilterTest {
     }
 
     @Test
+    @DisplayName("IPv6 loopback matches a 127.0.0.1 entry — found by booting it, not by a unit test")
+    void ipv6LoopbackIsNotALockout() throws Exception {
+        // The container reports IPv6 loopback as 0:0:0:0:0:0:0:1. An operator writes 127.0.0.1
+        // (or ::1). A raw string compare matched none of these and locked everyone out of the
+        // console — the exact failure this feature must never cause.
+        IpAllowlistFilter f = filter("127.0.0.1");
+        for (String loopback : new String[]{"0:0:0:0:0:0:0:1", "::1", "127.0.0.1"}) {
+            FilterChain chain = mock(FilterChain.class);
+            f.doFilter(req("/api/v1/auth/login", loopback), mock(HttpServletResponse.class), chain);
+            verify(chain, description("loopback form must match: " + loopback)).doFilter(any(), any());
+        }
+    }
+
+    @Test
+    @DisplayName("an IPv6 entry is accepted at boot and matches whichever spelling arrives")
+    void ipv6EntryAccepted() throws Exception {
+        IpAllowlistFilter f = filter("::1");
+        FilterChain chain = mock(FilterChain.class);
+        f.doFilter(req("/api/v1/fleet/overview", "0:0:0:0:0:0:0:1"),
+                   mock(HttpServletResponse.class), chain);
+        verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("normalisation does not widen the list — a different address is still refused")
+    void normalisationDoesNotWiden() throws Exception {
+        IpAllowlistFilter f = filter("127.0.0.1");
+        HttpServletResponse resp = mock(HttpServletResponse.class);
+        when(resp.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+        FilterChain chain = mock(FilterChain.class);
+        f.doFilter(req("/api/v1/fleet/overview", "10.0.0.1"), resp, chain);
+        verify(chain, never()).doFilter(any(), any());
+        verify(resp).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    }
+
+    @Test
     @DisplayName("a malformed entry fails the boot rather than silently narrowing the list")
     void malformedEntryFailsFast() {
         assertThatThrownBy(() -> filter("203.0.113.0/24, not-an-ip"))
