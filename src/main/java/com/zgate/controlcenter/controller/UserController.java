@@ -82,6 +82,7 @@ public class UserController {
 
     /** Lost-authenticator break-glass. Also revokes the account's outstanding sessions. */
     @PostMapping("/{id}/mfa/disable")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseMessage(code = "MFA_DISABLED", value = "Two-factor authentication disabled; sessions revoked")
     public ResponseEntity<Void> mfaDisable(@PathVariable UUID id,

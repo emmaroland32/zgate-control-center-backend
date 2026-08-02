@@ -22,6 +22,7 @@ public class AuthController {
     private final AuthenticationManager authManager;
     private final JwtUtils jwtUtils;
     private final ControlCenterUserService userService;
+    private final com.zgate.controlcenter.service.StepUpTicketService stepUpTickets;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
@@ -64,5 +65,43 @@ public class AuthController {
             "email", req.getEmail(),
             "role", role
         ));
+    }
+
+    /**
+     * Re-authenticate to obtain a short-lived step-up ticket for a destructive action.
+     *
+     * <p>Requires the CURRENT password (and MFA code when enabled) from the already-signed-in
+     * operator — a valid session is not sufficient, which is the entire point: it proves the person
+     * at the keyboard right now is the account holder, not someone who found an unlocked laptop.
+     * Failures count toward the same lockout as a normal sign-in, so this cannot be used as an
+     * unthrottled password oracle against a session you have already stolen.
+     */
+    @PostMapping("/step-up")
+    public ResponseEntity<?> stepUp(
+            @RequestBody Map<String, String> body,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+            org.springframework.security.core.userdetails.UserDetails me) {
+        if (me == null) {
+            throw new com.zgate.controlcenter.exception.ControlCenterException(
+                "Sign in before requesting a step-up ticket.",
+                "UNAUTHORIZED", org.springframework.http.HttpStatus.UNAUTHORIZED);
+        }
+        String email = me.getUsername();
+        userService.requireNotLockedOut(email);
+        try {
+            authManager.authenticate(
+                new UsernamePasswordAuthenticationToken(email, body.get("password")));
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            userService.recordFailedLogin(email);
+            throw e;
+        }
+        try {
+            userService.requireMfaIfEnabled(email, body.get("mfaCode"));
+        } catch (com.zgate.controlcenter.exception.ControlCenterException e) {
+            if ("MFA_INVALID".equals(e.getCode())) userService.recordFailedLogin(email);
+            throw e;
+        }
+        userService.recordSuccessfulLogin(email);
+        return ResponseEntity.ok(Map.of("ticket", stepUpTickets.issue(email), "expiresInSeconds", 300));
     }
 }

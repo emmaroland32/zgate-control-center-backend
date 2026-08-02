@@ -67,6 +67,7 @@ public class ProvisioningController {
      * returns the generated external id for the customer's role trust policy.
      */
     @PostMapping("/credentials")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseMessage(code = "CLOUD_CREDENTIAL_CREATED", value = "Cloud credential saved")
     public ResponseEntity<CloudCredential> createCredential(
@@ -218,6 +219,7 @@ public class ProvisioningController {
      * removing a customer's ledger takes two separate, deliberate changes.
      */
     @PostMapping("/stacks/{id}/destroy")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseMessage(code = "PROVISION_DESTROYING", value = "Destroying the deployment")
     public ResponseEntity<ProvisioningRun> destroy(@PathVariable UUID id,

@@ -69,6 +69,7 @@ public class BackupAdminController {
      * SUPER_ADMIN + audited because it is still an export of a customer's database dump.
      */
     @PostMapping("/org/{orgId}/{backupId}/restore-url")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseMessage(code = "BACKUP_RESTORE_URL", value = "Download link created (valid ~30 minutes)")
     public ResponseEntity<java.util.Map<String, String>> restoreUrl(

@@ -102,6 +102,7 @@ public class DatabaseController {
      * SUPER_ADMIN, the server-side restoreEnabled flag, AND the backup id echoed as confirmation.
      */
     @PostMapping("/backups/{id}/restore")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseMessage(code = "BACKUP_RESTORED", value = "Database restored from backup")
     public ResponseEntity<Map<String, String>> restoreBackup(

@@ -67,6 +67,7 @@ public class FleetController {
     }
 
     @PostMapping("/rollouts")
+    @com.zgate.controlcenter.security.RequiresStepUp
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "ROLLOUT_CREATED",
                      value = "Rollout created. The canary wave starts on the next orchestrator tick.")

@@ -55,6 +55,9 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Step-up must come BEFORE the /auth/** permitAll: it re-authenticates an
+                // ALREADY signed-in operator, so an anonymous caller has no principal to prove.
+                .requestMatchers("/api/v1/auth/step-up").authenticated()
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/api/v1/shared-services/track").permitAll() // called by ZGATE instances
