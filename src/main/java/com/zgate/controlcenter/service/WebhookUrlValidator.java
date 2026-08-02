@@ -84,6 +84,51 @@ public class WebhookUrlValidator {
         }
     }
 
+    /**
+     * The same rules, but with {@code allowInsecureTargets} deliberately ignored.
+     *
+     * <p>That flag exists so a developer can point a webhook at a local test receiver. Callers who
+     * are validating something an ATTACKER could influence — an OIDC issuer, whose discovery
+     * document then chooses where this host sends its client secret — must not inherit it: turning
+     * on a local webhook receiver would otherwise silently disable their SSRF protection too.
+     */
+    public void validateStrict(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new ControlCenterException("A URL is required.",
+                "URL_INVALID", HttpStatus.BAD_REQUEST);
+        }
+        URI uri;
+        try {
+            uri = URI.create(rawUrl.trim());
+        } catch (IllegalArgumentException e) {
+            throw new ControlCenterException("That is not a valid URL.",
+                "URL_INVALID", HttpStatus.BAD_REQUEST);
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+        if (!scheme.equals("https")) {
+            throw new ControlCenterException("That URL must use https.",
+                "URL_INVALID", HttpStatus.BAD_REQUEST);
+        }
+        if (uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new ControlCenterException("That URL has no host.",
+                "URL_INVALID", HttpStatus.BAD_REQUEST);
+        }
+        InetAddress[] resolved;
+        try {
+            resolved = InetAddress.getAllByName(uri.getHost());
+        } catch (UnknownHostException e) {
+            throw new ControlCenterException("That host could not be resolved: " + uri.getHost(),
+                "URL_UNRESOLVABLE", HttpStatus.BAD_REQUEST);
+        }
+        for (InetAddress addr : resolved) {
+            if (isInternal(addr)) {
+                throw new ControlCenterException(
+                    "That URL resolves to an internal address (" + addr.getHostAddress() + ").",
+                    "URL_INTERNAL", HttpStatus.BAD_REQUEST);
+            }
+        }
+    }
+
     private boolean isInternal(InetAddress addr) {
         return addr.isLoopbackAddress()        // 127.0.0.0/8, ::1
             || addr.isLinkLocalAddress()       // 169.254.0.0/16 (cloud metadata), fe80::/10

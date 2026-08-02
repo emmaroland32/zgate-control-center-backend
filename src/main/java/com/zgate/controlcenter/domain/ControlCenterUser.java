@@ -30,6 +30,17 @@ public class ControlCenterUser {
     @Column(nullable = false)
     private Role role;
 
+    /**
+     * The identity provider's immutable subject, linked on first SSO sign-in.
+     *
+     * <p>Matching on email alone is not stable: when an operator leaves and their address is
+     * reassigned — a new hire, or a shared alias like {@code ops@} turned into a mailbox — the new
+     * holder would inherit the departed operator's role. Once linked, the subject is what must
+     * match; a DIFFERENT subject arriving for a known email is refused, not silently relinked.
+     */
+    @Column(length = 255, unique = true)
+    private String oidcSubject;
+
     // @Builder.Default ensures builder().build() gets true, not the primitive default false
     @Builder.Default
     @Column(nullable = false)
