@@ -45,6 +45,13 @@ public class ControlCenterUserService {
     @org.springframework.beans.factory.annotation.Value("${controlcenter.auth.password.requireSymbol:false}")
     private boolean passwordRequireSymbol;
 
+    /** Reported so the console shows whether the operator IP allow-list is actually active. */
+    @org.springframework.beans.factory.annotation.Value("#{'${controlcenter.security.ipAllowlist:}'.trim().isEmpty() ? false : true}")
+    private boolean ipAllowlistEnabled;
+
+    @org.springframework.beans.factory.annotation.Value("#{'${controlcenter.security.ipAllowlist:}'.trim().isEmpty() ? 0 : '${controlcenter.security.ipAllowlist:}'.split('[,\\s]+').length}")
+    private int ipAllowlistEntryCount;
+
     /**
      * Enforce the password policy on any credential this console accepts. The settings screen used
      * to display these rules while nothing applied them — a control that only exists in the UI is
@@ -83,7 +90,9 @@ public class ControlCenterUserService {
             "lockoutThreshold", lockoutThreshold,
             "lockoutBaseMinutes", lockoutBaseMinutes,
             "lockoutMaxMinutes", lockoutMaxMinutes,
-            "mfaSecretsEncrypted", cipher.isConfigured());
+            "mfaSecretsEncrypted", cipher.isConfigured(),
+            "ipAllowlistEnabled", ipAllowlistEnabled,
+            "ipAllowlistEntries", ipAllowlistEntryCount);
     }
 
     public List<ControlCenterUser> findAll() { return repo.findAll(); }

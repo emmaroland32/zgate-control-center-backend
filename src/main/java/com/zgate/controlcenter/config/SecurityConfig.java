@@ -27,6 +27,7 @@ public class SecurityConfig {
     private final UserDetailsServiceImpl userDetailsService;
     private final JwtAuthFilter jwtAuthFilter;
     private final com.zgate.controlcenter.security.ServiceKeyAuthFilter serviceKeyAuthFilter;
+    private final com.zgate.controlcenter.security.IpAllowlistFilter ipAllowlistFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -66,7 +67,12 @@ public class SecurityConfig {
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             // M2M service-key auth for org-facing endpoints (no-op unless controlcenter.serviceKey.enforce=true)
-            .addFilterBefore(serviceKeyAuthFilter, JwtAuthFilter.class);
+            .addFilterBefore(serviceKeyAuthFilter, JwtAuthFilter.class)
+            // Operator IP allow-list runs FIRST: a blocked address should never reach
+            // authentication at all. No-op unless controlcenter.security.ipAllowlist is set, and
+            // machine-to-machine endpoints are exempt (customer deployments phone home from
+            // arbitrary addresses).
+            .addFilterBefore(ipAllowlistFilter, com.zgate.controlcenter.security.ServiceKeyAuthFilter.class);
         return http.build();
     }
 }

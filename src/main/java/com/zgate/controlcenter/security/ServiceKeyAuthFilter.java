@@ -56,7 +56,7 @@ public class ServiceKeyAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String path = lookupPath(request);
+        String path = RequestPath.lookup(request);
         // An unresolvable path is treated as guarded: the only safe reading of "I cannot tell which
         // route this is" is to demand the key, not to wave it through.
         boolean guarded = path == null || GUARDED.stream().anyMatch(path::startsWith);
@@ -77,34 +77,6 @@ public class ServiceKeyAuthFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(request, response);
-    }
-
-    /**
-     * The path this filter makes its decision on, resolved the way the dispatcher resolves routes:
-     * context-path stripped, percent-decoded, dot segments collapsed.
-     *
-     * <p>Matching on the raw {@code getRequestURI()} let the two engines disagree. A deployment with
-     * a {@code server.servlet.context-path} would have failed every prefix test and silently stopped
-     * enforcing anything, and an encoded dot segment ({@code /api/v1/%2e/backups/initiate}) could
-     * normalise onto a mapped route while dodging {@code startsWith} — reaching the backup agent API
-     * (including the ciphertext download) with no service key.
-     *
-     * <p>Returns null when the path cannot be resolved at all; the caller treats that as guarded and
-     * demands a service key (fail closed).
-     */
-    private static String lookupPath(HttpServletRequest request) {
-        try {
-            String withinApp = org.springframework.web.util.UrlPathHelper.defaultInstance
-                .getPathWithinApplication(request);
-            if (withinApp == null || withinApp.isBlank()) return "/";
-            String normalized = java.net.URI.create("/" + withinApp.replaceFirst("^/+", ""))
-                .normalize().getPath();
-            return normalized == null || normalized.isBlank() ? "/" : normalized;
-        } catch (RuntimeException e) {
-            // Unresolvable path: return null so the caller treats it as NOT matching a guarded
-            // prefix but ALSO cannot be used to reach one — Spring will reject it downstream.
-            return null;
-        }
     }
 
     private static UUID parseUuid(String s) {
