@@ -6,6 +6,7 @@ import com.zgate.controlcenter.exception.ControlCenterException;
 import com.zgate.controlcenter.repository.ControlCenterUserRepository;
 import com.zgate.controlcenter.security.ClientIpResolver;
 import com.zgate.controlcenter.security.JwtUtils;
+import com.zgate.controlcenter.security.RateLimit;
 import com.zgate.controlcenter.service.AuditService;
 import com.zgate.controlcenter.service.ControlCenterUserService;
 import com.zgate.controlcenter.service.OidcService;
@@ -84,6 +85,9 @@ public class OidcController {
     }
 
     /** Start sign-in: returns the provider URL, and binds this sign-in to this browser. */
+    // Anonymous, and each call mints signed state and may reach the provider — an unthrottled
+    // oracle otherwise.
+    @RateLimit(limit = 20, windowSeconds = 60, keyBy = RateLimit.KeyStrategy.IP)
     @GetMapping("/authorize")
     public ResponseEntity<?> authorize(HttpServletResponse response) {
         OidcService.AuthorizationRequest req = oidc.authorizationRequest();
@@ -109,6 +113,7 @@ public class OidcController {
      * a verified token is necessary but not sufficient — unless auto-provisioning is deliberately
      * turned on with a role, an unknown subject is refused rather than welcomed.
      */
+    @RateLimit(limit = 20, windowSeconds = 60, keyBy = RateLimit.KeyStrategy.IP)
     @PostMapping("/callback")
     public ResponseEntity<?> callback(@RequestBody Map<String, String> body,
                                       HttpServletRequest http,

@@ -2,6 +2,7 @@ package com.zgate.controlcenter.controller;
 
 import com.zgate.controlcenter.payload.request.LoginRequest;
 import com.zgate.controlcenter.security.JwtUtils;
+import com.zgate.controlcenter.security.RateLimit;
 import com.zgate.controlcenter.service.ControlCenterUserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,10 @@ public class AuthController {
     private final ControlCenterUserService userService;
     private final com.zgate.controlcenter.service.StepUpTicketService stepUpTickets;
 
+    // Keyed by IP, not by account: the lockout in ControlCenterUserService already caps attempts
+    // against ONE account, but nothing capped an attacker walking a password list across many
+    // accounts from one source, or hammering the endpoint to enumerate which addresses lock out.
+    @RateLimit(limit = 10, windowSeconds = 60, keyBy = RateLimit.KeyStrategy.IP)
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
         // Lockout first: without it this endpoint is an unthrottled oracle — both for passwords
@@ -76,6 +81,9 @@ public class AuthController {
      * Failures count toward the same lockout as a normal sign-in, so this cannot be used as an
      * unthrottled password oracle against a session you have already stolen.
      */
+    // Per-operator: this is reached with a valid session, so IP keying would let one compromised
+    // session burn another operator's quota.
+    @RateLimit(limit = 10, windowSeconds = 60, keyBy = RateLimit.KeyStrategy.USER)
     @PostMapping("/step-up")
     public ResponseEntity<?> stepUp(
             @RequestBody Map<String, String> body,
