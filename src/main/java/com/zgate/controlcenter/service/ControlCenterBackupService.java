@@ -33,7 +33,13 @@ import java.util.regex.Pattern;
  */
 @Service
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class ControlCenterBackupService {
+
+    /** Marker file each replica drops in the backup directory, so we can tell if it is shared. */
+    private static final String NODE_MARKER_PREFIX = ".cc-node-";
+
+    private final ReplicaRegistry replicas;
 
     /** Backup file names are generated, but the id arrives from a request — keep it inert. */
     private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,120}");
@@ -78,6 +84,64 @@ public class ControlCenterBackupService {
         return restoreEnabled;
     }
 
+    /**
+     * Announce this replica's presence in the backup directory.
+     *
+     * <p>If the directory is shared storage every replica's marker is visible from every replica.
+     * If it is node-local, each one only ever sees its own — which is exactly the condition that
+     * makes a backup taken on one node unrestorable from another.
+     */
+    @jakarta.annotation.PostConstruct
+    void markThisNode() {
+        if (unavailableReason() != null) return;
+        try {
+            Path dir = Path.of(directory);
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve(NODE_MARKER_PREFIX + nodeName()),
+                              LocalDateTime.now().toString());
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not write the node marker: {}", e.toString());
+        }
+    }
+
+    /**
+     * A warning about node-local backup storage, or null when there is nothing to say.
+     *
+     * <p>This directory holds full database dumps on the local filesystem. On a single replica that
+     * is fine. Behind a load balancer it is not: a dump written by one node is invisible to the
+     * others, so the console shows a shrinking, request-dependent list and a restore fails at the
+     * moment it is needed most. Reported only with POSITIVE evidence of another live replica, so a
+     * normal single-node install stays quiet.
+     */
+    public String storageWarning() {
+        if (unavailableReason() != null) return null;
+        List<String> nodes = replicas.activeNodes();
+        if (nodes.size() < 2) return null;
+
+        List<String> unseen = new ArrayList<>();
+        for (String node : nodes) {
+            if (!Files.exists(Path.of(directory).resolve(NODE_MARKER_PREFIX + node))) {
+                unseen.add(node);
+            }
+        }
+        if (unseen.isEmpty()) return null;   // every replica's marker is here: shared storage
+
+        return "This Control Center is running on " + nodes.size() + " replicas, but the backup "
+             + "directory is local to this one — no trace of " + String.join(", ", unseen) + ". "
+             + "Backups taken on those replicas will not appear here and cannot be restored from "
+             + "here. Point controlcenter.database.backup.directory at shared storage (EFS/NFS), or "
+             + "run backups against a single replica.";
+    }
+
+    private static String nodeName() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName()
+                .replaceAll("[^A-Za-z0-9._-]", "-");
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
     public List<BackupFile> list() {
         if (unavailableReason() != null) return List.of();
         Path dir = Path.of(directory);
@@ -85,6 +149,7 @@ public class ControlCenterBackupService {
         List<BackupFile> out = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.dump")) {
             for (Path p : stream) {
+                if (p.getFileName().toString().startsWith(NODE_MARKER_PREFIX)) continue;
                 var attrs = Files.readAttributes(p, java.nio.file.attribute.BasicFileAttributes.class);
                 String created = LocalDateTime.ofInstant(
                     attrs.creationTime().toInstant(), java.time.ZoneId.systemDefault()).toString();
@@ -177,7 +242,13 @@ public class ControlCenterBackupService {
         Path file = dir.resolve(id).normalize();
         // Belt and braces with SAFE_ID: the resolved path must still be inside the directory.
         if (!file.startsWith(dir) || !Files.isRegularFile(file)) {
-            throw new ControlCenterException("Backup not found: " + id,
+            // On a multi-node console the overwhelmingly likely cause is that the dump lives on
+            // another replica's disk, not that it never existed. Saying so beats a bare 404 when
+            // the operator is mid-disaster-recovery.
+            String warning = storageWarning();
+            throw new ControlCenterException(
+                warning == null ? "Backup not found: " + id
+                                : "Backup not found on this replica: " + id + ". " + warning,
                 "BACKUP_NOT_FOUND", HttpStatus.NOT_FOUND);
         }
         return file;

@@ -55,10 +55,14 @@ public class DatabaseController {
     @GetMapping("/backups")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<Map<String, Object>> getBackups() {
+        String storageWarning = backups.storageWarning();
         return ResponseEntity.ok(Map.of(
             "available", backups.unavailableReason() == null,
             "unavailableReason", backups.unavailableReason() == null ? "" : backups.unavailableReason(),
             "restoreEnabled", backups.isRestoreEnabled(),
+            // Non-empty when this console runs on several replicas but the backup directory is
+            // local to this one — the operator needs to know that BEFORE they need a restore.
+            "storageWarning", storageWarning == null ? "" : storageWarning,
             "backups", backups.list()));
     }
 
