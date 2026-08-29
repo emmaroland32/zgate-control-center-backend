@@ -25,6 +25,15 @@ public class TelemetryController {
 
     private final TelemetryService service;
 
+    /**
+     * Hard ceiling on events accepted in a single ingest call. The endpoint is unauthenticated when
+     * {@code controlcenter.serviceKey.enforce=false}, and every event is a DB row — an uncapped batch
+     * is anonymous write amplification. The legitimate agent flushes {@code CONTROLCENTER_TELEMETRY_BATCH_SIZE}
+     * (default 50) per call, so this is far above any honest payload.
+     */
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.telemetry.maxIngestBatch:1000}")
+    private int maxIngestBatch;
+
     // ----------------------------------------------------------------
     // Ingest — called by ZGATE org instances (no auth, uses org API key header)
     // ----------------------------------------------------------------
@@ -46,6 +55,10 @@ public class TelemetryController {
             @RequestHeader(value = "X-Control-Center-Uptime-Sec", required = false) Long uptimeSeconds,
             @RequestHeader(value = "X-Control-Center-Cpu-Pct", required = false) Integer cpuPct,
             @RequestBody List<TelemetryEvent> events) {
+        if (events != null && events.size() > maxIngestBatch) {
+            // 413 Payload Too Large — reject before writing anything, don't silently truncate.
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
+        }
         service.ingest(orgId, events, fingerprint, nodeId, platform, memUsedMb, memMaxMb, uptimeSeconds, cpuPct);
         return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }

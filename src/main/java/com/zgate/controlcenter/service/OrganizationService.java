@@ -5,6 +5,7 @@ import com.zgate.controlcenter.exception.ControlCenterException;
 import com.zgate.controlcenter.payload.request.CreateOrganizationRequest;
 import com.zgate.controlcenter.repository.LicenseRepository;
 import com.zgate.controlcenter.repository.OrganizationRepository;
+import com.zgate.controlcenter.service.provisioning.SecretCipher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -21,6 +22,7 @@ public class OrganizationService {
 
     private final OrganizationRepository orgRepo;
     private final LicenseRepository licenseRepo;
+    private final SecretCipher secretCipher;
 
     @Cacheable("organizations")
     public List<Organization> findAll() {
@@ -46,7 +48,8 @@ public class OrganizationService {
                 "ORG_SLUG_TAKEN", org.springframework.http.HttpStatus.CONFLICT);
         }
         // Generate the machine-to-machine service API key (used by the install to authenticate its
-        // callbacks). We store only the SHA-256 hash and reveal the raw key once in this response.
+        // callbacks). We store the SHA-256 hash (for verification) and, when secret encryption is
+        // configured, an encrypted copy (so provisioning can re-inject it), and reveal the raw key once.
         String rawApiKey = generateApiKey();
 
         Organization org = Organization.builder()
@@ -61,11 +64,43 @@ public class OrganizationService {
             .deploymentEnv(req.getDeploymentEnv())
             .backendUrl(req.getBackendUrl())
             .partnerId(req.getPartnerId())
-            .serviceApiKeyHash(sha256Hex(rawApiKey))
             .build();
+        stampServiceKey(org, rawApiKey);
         Organization saved = orgRepo.save(org);
         saved.setServiceApiKey(rawApiKey); // surfaced once (transient — never persisted)
         return saved;
+    }
+
+    /**
+     * Stamp a freshly generated raw key onto the org: always the SHA-256 hash (for verification), and
+     * — when {@link SecretCipher} is configured — an AES-GCM envelope so provisioning can recover the
+     * raw value on every terraform run. Without encryption configured we fall back to hash-only, and
+     * provisioning can only deliver the key at plan time (see ProvisioningService).
+     */
+    private void stampServiceKey(Organization org, String rawApiKey) {
+        org.setServiceApiKeyHash(sha256Hex(rawApiKey));
+        if (secretCipher != null && secretCipher.isConfigured()) {
+            org.setServiceApiKeyEnc(secretCipher.encrypt(rawApiKey, SecretCipher.PURPOSE_SERVICE_KEY));
+            org.setServiceApiKeyEncKid(secretCipher.activeKeyId());
+        } else {
+            org.setServiceApiKeyEnc(null);
+            org.setServiceApiKeyEncKid(null);
+        }
+    }
+
+    /**
+     * The org's raw service key, decrypted from its stored envelope — or {@code null} when none is
+     * stored or secret encryption is not configured. Used by provisioning to inject
+     * {@code CONTROLCENTER_SERVICE_KEY} on every run. Never surfaced over the API.
+     */
+    public String currentServiceKeyRaw(UUID orgId) {
+        Organization org = findById(orgId);
+        if (org.getServiceApiKeyEnc() == null || org.getServiceApiKeyEnc().isBlank()
+                || secretCipher == null || !secretCipher.isConfigured()) {
+            return null;
+        }
+        return secretCipher.decrypt(org.getServiceApiKeyEnc(), org.getServiceApiKeyEncKid(),
+                                    SecretCipher.PURPOSE_SERVICE_KEY);
     }
 
     /** Rotate the org's service API key, returning the new raw key once (only the hash is stored). */
@@ -73,10 +108,24 @@ public class OrganizationService {
     public Organization regenerateServiceKey(UUID id) {
         Organization org = findById(id);
         String rawApiKey = generateApiKey();
-        org.setServiceApiKeyHash(sha256Hex(rawApiKey));
+        stampServiceKey(org, rawApiKey);
         Organization saved = orgRepo.save(org);
         saved.setServiceApiKey(rawApiKey);
         return saved;
+    }
+
+    /**
+     * Mint a fresh service API key for the org, store its hash, and return the RAW key once.
+     *
+     * <p>Called by provisioning so a stack is deployed with its own {@code CONTROLCENTER_SERVICE_KEY}
+     * baked into the customer's secret manager — closing the gap where provisioned installs never
+     * received a key and enforcement therefore could not be turned on. Because only the hash is
+     * stored, the raw value cannot be reproduced later; re-provisioning mints a new key (the freshly
+     * applied stack picks it up), which is why this is deliberately called on the provision path only.
+     */
+    @CacheEvict(value = "organizations", allEntries = true)
+    public String mintServiceKeyRaw(UUID id) {
+        return regenerateServiceKey(id).getServiceApiKey();
     }
 
     /** Verify a presented service API key against the org's stored hash (constant-time). */

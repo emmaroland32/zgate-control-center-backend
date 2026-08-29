@@ -47,8 +47,24 @@ public class Organization {
     private String serviceApiKeyHash;
 
     /**
+     * The service API key, encrypted at rest (AES-256-GCM via {@link
+     * com.zgate.controlcenter.service.provisioning.SecretCipher}, purpose {@code service-key}).
+     *
+     * <p>Unlike the hash, this is reversible so provisioning can inject the raw key into a stack on
+     * every terraform run — an {@code apply} re-renders the spec from scratch and cannot recover it
+     * from a plan. Only populated when provisioning secret encryption is configured; a DB dump without
+     * the master key cannot read it. {@code serviceApiKeyEncKid} records which key encrypted it so a
+     * rotation stays decryptable.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String serviceApiKeyEnc;
+
+    private String serviceApiKeyEncKid;
+
+    /**
      * The raw service API key, surfaced ONCE in the create / regenerate response so the operator can
-     * configure it on the install. Never persisted (only the hash is) and null on every other read.
+     * configure it on the install. Never persisted as plaintext (the hash and the encrypted envelope
+     * are) and null on every other read.
      */
     @Transient
     private String serviceApiKey;

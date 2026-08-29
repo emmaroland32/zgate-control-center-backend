@@ -46,6 +46,9 @@ public class AuthController {
             throw e;
         }
 
+        // The committed default password must never yield a session, even when it "matches".
+        userService.requireNotDefaultPassword(req.getEmail());
+
         // Second factor AFTER the password check, so a wrong password never reveals whether the
         // account has MFA. MFA_REQUIRED (valid password, no/blank code) tells the UI to show the
         // code field; a present-but-wrong code is MFA_INVALID and counts toward the lockout.

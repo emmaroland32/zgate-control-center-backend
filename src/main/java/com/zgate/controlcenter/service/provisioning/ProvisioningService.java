@@ -44,6 +44,7 @@ public class ProvisioningService {
     private final SpecRenderer specRenderer;
     private final TerraformRunner runner;
     private final ProvisioningExecutor executor;
+    private final com.zgate.controlcenter.service.OrganizationService organizationService;
 
     /**
      * Optional. Only bare metal needs it — every other target mirrors the image with the runner's
@@ -424,9 +425,35 @@ public class ProvisioningService {
             }
         }
 
+        // Deliver the org's Control Center service key on EVERY run, for the same reason as the SSH
+        // key: `terraform apply` re-renders the tfvars from scratch (no saved plan), so a key injected
+        // only at plan time never reaches the customer's secret manager and the installed instance
+        // comes up unauthenticated. We store the key encrypted at rest (SecretCipher) precisely so it
+        // can be recovered here; the first provision mints it (nothing stored yet), every later run
+        // re-injects the same value. Before this, provisioned stacks got no key at all — which is why
+        // serviceKey.enforce could never be turned on. Injected regardless of `req` so plan AND apply
+        // both carry it.
+        String ccServiceKey = organizationService.currentServiceKeyRaw(stack.getOrganizationId());
+        if (ccServiceKey == null && req != null) {
+            // First provision, or a legacy org with no encrypted copy yet — mint and persist one now.
+            ccServiceKey = organizationService.mintServiceKeyRaw(stack.getOrganizationId());
+        }
+        if (ccServiceKey != null) {
+            secrets.put("control_center_service_key", ccServiceKey);
+        } else if (req != null) {
+            // Provisioning without secret encryption configured: we cannot store the key reversibly,
+            // so it cannot be re-injected at apply time. The stack will come up without it; enforcement
+            // must stay off until controlcenter.provisioning.encryptionKey is set.
+            log.warn("Provisioning org {} without a recoverable Control Center service key: secret "
+                    + "encryption is not configured, so CONTROLCENTER_SERVICE_KEY will not survive to apply. "
+                    + "Set controlcenter.provisioning.encryptionKey to enable service-key enforcement.",
+                    stack.getOrganizationId());
+        }
+
         if (req == null) {
             return secrets.isEmpty() ? stack.getSpecJson() : merged(stack, secrets);
         }
+
         if (req.getExternalDatabase() != null && req.getExternalDatabase().getPassword() != null
                 && !req.getExternalDatabase().getPassword().isBlank()) {
             secrets.put("external_db_password", req.getExternalDatabase().getPassword());

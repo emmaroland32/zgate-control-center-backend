@@ -60,7 +60,15 @@ public class License {
     @Builder.Default
     private DeliveryStatus deliveryStatus = DeliveryStatus.PENDING;
 
-    /** Cached signed .lic bundle — regenerated on each generateBundle() call. */
+    /**
+     * Cached signed .lic bundle — regenerated on each generateBundle() call.
+     *
+     * <p>{@code @JsonIgnore}: this is the RSA-signed entitlement material an org activates. It must
+     * never ride out on a {@code License} serialization (the {@code GET /api/v1/licenses} list is
+     * reachable by any authenticated operator, VIEWER included). Instances receive it deliberately via
+     * the {@code BundleDelivery} DTO on {@code GET /api/v1/licenses/bundle}, never through this entity.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(columnDefinition = "TEXT")
     private String bundleJson;
 

@@ -297,6 +297,66 @@ public class ControlCenterUserService {
         }
     }
 
+    // ── Default-credential lockout ──────────────────────────────────────────
+
+    /**
+     * The bcrypt hash of the shipped default super-admin password ({@code Admin@123}) seeded in
+     * {@code V2__nexus_seed.sql}. It is committed to the repository, so any install that never
+     * changed it is trivially compromised. We refuse to authenticate while it is still in place.
+     */
+    private static final String DEFAULT_ADMIN_HASH =
+        "$2b$10$KjHJpT53N1iTFymVsLhkv.MRLLYKGbR4SF0eRHzaJGZ9ASrxjW2V.";
+
+    /** Optional bootstrap password to replace the seeded default at startup (env CONTROLCENTER_ADMIN_PASSWORD). */
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.bootstrap.adminPassword:}")
+    private String bootstrapAdminPassword;
+
+    /**
+     * Refuse to authenticate an account whose password is still the committed default. Called after a
+     * successful password check so the known credential ({@code admin@zgate.com} / {@code Admin@123})
+     * can never yield a session. The operator must set a real password first — either via
+     * {@code CONTROLCENTER_ADMIN_PASSWORD} at deploy (see {@link #bootstrapDefaultAdmin}) or by
+     * changing it out of band.
+     */
+    public void requireNotDefaultPassword(String email) {
+        repo.findByEmail(email).ifPresent(user -> {
+            if (DEFAULT_ADMIN_HASH.equals(user.getPasswordHash())) {
+                log.warn("Refused sign-in for {} — account still uses the shipped default password. "
+                        + "Set CONTROLCENTER_ADMIN_PASSWORD or change it out of band.", email);
+                throw new com.zgate.controlcenter.exception.ControlCenterException(
+                    "This account still uses the default password shipped with Control Center and cannot "
+                    + "sign in. An administrator must set a new password (CONTROLCENTER_ADMIN_PASSWORD) first.",
+                    "DEFAULT_PASSWORD_MUST_BE_CHANGED", org.springframework.http.HttpStatus.FORBIDDEN);
+            }
+        });
+    }
+
+    /**
+     * At startup, if the seeded super-admin still holds the default hash and a bootstrap password is
+     * supplied, replace it. This gives operators a first-login path without the committed credential
+     * ever being usable. No-op when unset or when the password was already changed.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void bootstrapDefaultAdmin() {
+        if (bootstrapAdminPassword == null || bootstrapAdminPassword.isBlank()) return;
+        repo.findByEmail("admin@zgate.com").ifPresent(user -> {
+            if (!DEFAULT_ADMIN_HASH.equals(user.getPasswordHash())) return; // already rotated — leave it
+            try {
+                requirePasswordPolicy(bootstrapAdminPassword);
+            } catch (RuntimeException e) {
+                // Don't crash startup over a weak bootstrap value; the default hash stays in place and
+                // login remains refused (the safe state) until a compliant password is supplied.
+                log.error("CONTROLCENTER_ADMIN_PASSWORD does not meet the password policy — the default "
+                        + "super-admin password was NOT changed and that account cannot sign in.");
+                return;
+            }
+            user.setPasswordHash(passwordEncoder.encode(bootstrapAdminPassword));
+            repo.save(user);
+            log.info("Bootstrapped a new password for the default super-admin (admin@zgate.com) from "
+                    + "CONTROLCENTER_ADMIN_PASSWORD.");
+        });
+    }
+
     // ── Login throttling ────────────────────────────────────────────────────
 
     /** Refuse a login attempt while the account is locked out. Called before password auth. */

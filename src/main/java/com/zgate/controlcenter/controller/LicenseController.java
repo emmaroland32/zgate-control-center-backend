@@ -152,10 +152,20 @@ public class LicenseController {
         return ResponseEntity.ok(service.fetchBundlesForOrg(orgId));
     }
 
-    /** Called by ZGATE org instances to report successful/failed activation. */
+    /**
+     * Called by ZGATE org instances to report successful/failed activation.
+     *
+     * <p>The org is taken from the {@code X-Control-Center-Org-Id} header — the same identifier the
+     * {@link com.zgate.controlcenter.security.ServiceKeyAuthFilter} validates the service key against —
+     * NOT from the request body. A body-supplied org id let any caller (even one holding a valid key
+     * for its own org) flip another org's license delivery state; every other M2M route binds to the
+     * header, and this one now does too.
+     */
     @PostMapping("/status-report")
-    public ResponseEntity<Void> statusReport(@RequestBody StatusReportRequest req) {
-        service.reportActivation(req.getOrgId(), req.getModuleName(),
+    public ResponseEntity<Void> statusReport(
+            @RequestHeader("X-Control-Center-Org-Id") UUID orgId,
+            @RequestBody StatusReportRequest req) {
+        service.reportActivation(orgId, req.getModuleName(),
                                  req.isSuccess(), req.getOrgModulesJson());
         return ResponseEntity.ok().build();
     }

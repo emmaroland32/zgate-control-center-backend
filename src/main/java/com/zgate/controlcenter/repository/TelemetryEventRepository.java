@@ -13,6 +13,15 @@ import java.util.UUID;
 
 public interface TelemetryEventRepository extends JpaRepository<TelemetryEvent, UUID> {
 
+    /**
+     * Delete events received before the cutoff. Backs the retention sweep — this table holds customer
+     * production error text (messages, stack traces, context) and must not grow unbounded / retain
+     * that data indefinitely. Returns the number of rows removed.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM TelemetryEvent t WHERE t.receivedAt < :cutoff")
+    int deleteByReceivedAtBefore(@Param("cutoff") LocalDateTime cutoff);
+
     Page<TelemetryEvent> findByOrganizationId(UUID orgId, Pageable pageable);
 
     Page<TelemetryEvent> findByLevel(TelemetryEvent.Level level, Pageable pageable);

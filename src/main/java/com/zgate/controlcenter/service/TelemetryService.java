@@ -24,6 +24,26 @@ public class TelemetryService {
     private final OrganizationRepository orgRepo;
     private final AnomalyDetectionService anomalyDetection;
 
+    /** Days of telemetry to retain; older events are purged by the nightly sweep. 0/negative = never purge. */
+    @org.springframework.beans.factory.annotation.Value("${controlcenter.telemetry.retentionDays:90}")
+    private int retentionDays;
+
+    /**
+     * Nightly retention sweep. Customer stack traces and free-form context land in this table in
+     * cleartext; without this they were retained forever and the table grew unbounded. Runs at ~03:15.
+     */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "${controlcenter.telemetry.retentionCron:0 15 3 * * *}")
+    @Transactional
+    public void purgeExpired() {
+        if (retentionDays <= 0) return;
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
+        int removed = repo.deleteByReceivedAtBefore(cutoff);
+        if (removed > 0) {
+            log.info("Telemetry retention: purged {} event(s) older than {} days (before {})",
+                     removed, retentionDays, cutoff);
+        }
+    }
+
     /**
      * Called by org instances. Accepts a batch of events in one call to reduce
      * network overhead. Also updates org.lastSeenAt as a heartbeat side-effect.

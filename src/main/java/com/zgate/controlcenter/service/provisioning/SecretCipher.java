@@ -61,6 +61,9 @@ public class SecretCipher {
     /** Audit-row signing. Separate again: a leak of one purpose's key must not forge the others. */
     public static final String PURPOSE_AUDIT = "audit-integrity";
 
+    /** Org M2M service key, stored reversibly so provisioning can re-inject it on every terraform run. */
+    public static final String PURPOSE_SERVICE_KEY = "service-key";
+
     private final String masterKeyB64;
     private final String keyringSpec;
     private final String activeKeyId;

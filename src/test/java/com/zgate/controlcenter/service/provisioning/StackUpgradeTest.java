@@ -65,7 +65,8 @@ class StackUpgradeTest {
         ReflectionTestUtils.setField(renderer, "webImageRepository", "");
 
         svc = new ProvisioningService(stackRepo, runRepo, orgRepo, releaseRepo,
-                mock(CloudCredentialService.class), renderer, runner, executor);
+                mock(CloudCredentialService.class), renderer, runner, executor,
+                mock(com.zgate.controlcenter.service.OrganizationService.class));
         ReflectionTestUtils.setField(svc, "stateBucket", "vendor-tf-state");
 
         when(runner.unavailableReason()).thenReturn(null);

@@ -34,6 +34,24 @@ public class ServiceKeyAuthFilter extends OncePerRequestFilter {
     @Value("${controlcenter.serviceKey.enforce:false}")
     private boolean enforce;
 
+    /**
+     * Surface the security posture at startup. With enforcement off, the M2M endpoints below (except
+     * managed backup, which is always enforced) accept any caller that presents a known org UUID — no
+     * service key required. Provisioning now delivers {@code CONTROLCENTER_SERVICE_KEY} to every stack,
+     * so once the fleet is keyed this should be turned on: {@code CONTROLCENTER_SERVICE_KEY_ENFORCE=true}.
+     */
+    @jakarta.annotation.PostConstruct
+    void logPosture() {
+        if (enforce) {
+            log.info("M2M service-key enforcement is ON for {}", GUARDED);
+        } else {
+            log.warn("M2M service-key enforcement is OFF (controlcenter.serviceKey.enforce=false): {} are "
+                    + "authenticated by org-id header alone. Managed backup is still enforced. Set "
+                    + "CONTROLCENTER_SERVICE_KEY_ENFORCE=true once every org instance is configured with its key.",
+                    GUARDED.stream().filter(p -> !ALWAYS_ENFORCED.contains(p)).toList());
+        }
+    }
+
     /** The machine-to-machine endpoints an install calls; each already carries the org-id header. */
     private static final List<String> GUARDED = List.of(
             "/api/v1/telemetry/ingest",

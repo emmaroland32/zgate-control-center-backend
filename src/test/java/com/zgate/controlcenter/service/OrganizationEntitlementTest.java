@@ -27,7 +27,8 @@ class OrganizationEntitlementTest {
     @BeforeEach
     void setUp() {
         orgRepo = mock(OrganizationRepository.class);
-        svc = new OrganizationService(orgRepo, mock(LicenseRepository.class));
+        svc = new OrganizationService(orgRepo, mock(LicenseRepository.class),
+                mock(com.zgate.controlcenter.service.provisioning.SecretCipher.class));
         Organization o = Organization.builder()
             .id(id).name("Acme").slug("acme")
             .tier(Organization.Tier.ENTERPRISE)

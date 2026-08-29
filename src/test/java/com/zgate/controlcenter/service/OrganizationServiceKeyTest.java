@@ -26,7 +26,8 @@ class OrganizationServiceKeyTest {
     @BeforeEach
     void setUp() {
         orgRepo = mock(OrganizationRepository.class);
-        svc = new OrganizationService(orgRepo, mock(LicenseRepository.class));
+        svc = new OrganizationService(orgRepo, mock(LicenseRepository.class),
+                mock(com.zgate.controlcenter.service.provisioning.SecretCipher.class));
         when(orgRepo.findBySlug(anyString())).thenReturn(Optional.empty());
         when(orgRepo.save(any())).thenAnswer(i -> i.getArgument(0));
     }
