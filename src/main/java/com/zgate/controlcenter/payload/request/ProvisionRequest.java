@@ -54,6 +54,7 @@ public class ProvisionRequest {
     @Pattern(regexp = "managed|external", message = "databaseMode must be managed or external")
     private String databaseMode = "managed";
 
+    @jakarta.validation.Valid
     private ExternalDatabase externalDatabase;
 
     @Min(value = 20, message = "databaseStorageGb must be at least 20")
@@ -71,6 +72,7 @@ public class ProvisionRequest {
     @Pattern(regexp = "managed|external|none", message = "cacheMode must be managed, external or none")
     private String cacheMode = "managed";
 
+    @jakarta.validation.Valid
     private ExternalCache externalCache;
 
     // ── Network ─────────────────────────────────────────────────────────────
@@ -78,6 +80,7 @@ public class ProvisionRequest {
     @Pattern(regexp = "create|existing", message = "networkMode must be create or existing")
     private String networkMode = "create";
 
+    @jakarta.validation.Valid
     private ExistingNetwork existingNetwork;
 
     /** Greenfield CIDR. Must not collide with anything the customer already peers with. */

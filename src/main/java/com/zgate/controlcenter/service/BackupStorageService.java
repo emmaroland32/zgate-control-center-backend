@@ -127,8 +127,10 @@ public class BackupStorageService {
 
     private void requireEnabled() {
         if (!isEnabled()) {
-            throw new IllegalStateException(
-                    "Managed backup is not configured (set controlcenter.backup.enabled=true and controlcenter.backup.s3.bucket).");
+            // A configuration state, not a bug: answer 503 like initiate does, not a 500.
+            throw new com.zgate.controlcenter.exception.ControlCenterException(
+                    "Managed backup is not configured (set controlcenter.backup.enabled=true and controlcenter.backup.s3.bucket).",
+                    "BACKUP_UNAVAILABLE", org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 

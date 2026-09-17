@@ -109,8 +109,14 @@ class FleetHardeningTest {
                 .id(UUID.randomUUID()).name("Op").email("op@zgate.io")
                 .passwordHash("x").role(ControlCenterUser.Role.ADMIN).build();
             when(repo.findByEmail("op@zgate.io")).thenReturn(Optional.of(user));
+            when(repo.findByEmailIgnoreCase("op@zgate.io")).thenReturn(Optional.of(user));
             when(repo.findById(user.getId())).thenReturn(Optional.of(user));
             when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+            // Management calls name the acting administrator; a super-admin may do all of them.
+            ControlCenterUser root = ControlCenterUser.builder()
+                .id(UUID.randomUUID()).name("Root").email("root@zgate.io")
+                .passwordHash("x").role(ControlCenterUser.Role.SUPER_ADMIN).build();
+            when(repo.findByEmailIgnoreCase("root@zgate.io")).thenReturn(Optional.of(root));
         }
 
         @Test
@@ -271,7 +277,7 @@ class FleetHardeningTest {
         @DisplayName("disable revokes sessions too — deactivating alone left tokens alive for 24h")
         void disableRevokes() {
             int before = user.getTokenVersion();
-            svc.disable(user.getId());
+            svc.disable("root@zgate.io", user.getId());
             assertThat(user.isActive()).isFalse();
             assertThat(user.getTokenVersion()).isEqualTo(before + 1);
         }
@@ -279,12 +285,12 @@ class FleetHardeningTest {
         @Test
         @DisplayName("revoke-sessions bumps the token version; MFA break-glass also revokes")
         void revocation() {
-            svc.revokeSessions(user.getId());
+            svc.revokeSessions("root@zgate.io", user.getId());
             assertThat(user.getTokenVersion()).isEqualTo(1);
 
             user.setMfaEnabled(true);
             user.setMfaSecret("SECRET");
-            svc.mfaDisable(user.getId());
+            svc.mfaDisable("root@zgate.io", user.getId());
             assertThat(user.isMfaEnabled()).isFalse();
             assertThat(user.getMfaSecret()).isNull();
             assertThat(user.getTokenVersion()).isEqualTo(2);

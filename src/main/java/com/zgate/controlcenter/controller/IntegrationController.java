@@ -149,13 +149,17 @@ public class IntegrationController {
         return ResponseEntity.ok(service.findAllIntegrations());
     }
 
+    // Enabling a provider or rewriting its credentials is an administrative change: without a gate
+    // any signed-in VIEWER could switch alert delivery on/off or point it at their own endpoint.
     @PostMapping("/{id}/toggle")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "INTEGRATION_TOGGLED", value = "Integration toggled")
     public ResponseEntity<IntegrationConfig> toggleIntegration(@PathVariable UUID id) {
         return ResponseEntity.ok(service.toggleIntegration(id));
     }
 
     @PutMapping("/{id}/config")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     @ResponseMessage(code = "INTEGRATION_UPDATED", value = "Integration configuration updated")
     public ResponseEntity<IntegrationConfig> updateIntegrationConfig(
             @PathVariable UUID id, @RequestBody Map<String, String> body) {

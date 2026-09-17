@@ -61,8 +61,10 @@ public class CloudCredentialService {
      * use {@link #load} and go through the update path, which re-reads.
      */
     private CloudCredential redact(CloudCredential c) {
-        c.setSecretCiphertext(null);
-        c.setSecretKeyId(null);
+        // The secret columns are @JsonIgnore on the entity, so nothing needs blanking here. The
+        // old version nulled them on the MANAGED entity inside create()/setEnabled()'s transaction;
+        // the dirty-check then flushed a null ciphertext that ck_cloud_cred_secret rejected, and
+        // every secret-bearing credential failed with a 500 on create.
         return c;
     }
 

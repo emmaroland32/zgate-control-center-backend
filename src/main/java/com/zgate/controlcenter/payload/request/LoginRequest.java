@@ -6,7 +6,8 @@ import lombok.Data;
 
 @Data
 public class LoginRequest {
-    @Email    @NotBlank private String email;
+    // Capped to the audit columns: an over-long address would make the sign-in audit row fail.
+    @Email @NotBlank @jakarta.validation.constraints.Size(max = 100) private String email;
     @NotBlank private String password;
     /** 6-digit TOTP code — required once the operator has MFA enabled. */
     private String mfaCode;

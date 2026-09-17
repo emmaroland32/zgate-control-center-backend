@@ -30,14 +30,14 @@ public class PartnerController {
     @PostMapping
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
     @ResponseMessage(code = "PARTNER_CREATED", value = "Partner created")
-    public ResponseEntity<Partner> create(@RequestBody Partner partner) {
+    public ResponseEntity<Partner> create(@jakarta.validation.Valid @RequestBody Partner partner) {
         return ResponseEntity.status(HttpStatus.CREATED).body(repo.save(partner));
     }
 
     @PutMapping("/{id}")
     @org.springframework.security.access.prepost.PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN')")
     @ResponseMessage(code = "PARTNER_UPDATED", value = "Partner updated")
-    public ResponseEntity<Partner> update(@PathVariable UUID id, @RequestBody Partner updated) {
+    public ResponseEntity<Partner> update(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody Partner updated) {
         Partner p = repo.findById(id).orElseThrow(() -> new ControlCenterException("Partner not found"));
         p.setCompanyName(updated.getCompanyName());
         p.setTier(updated.getTier());

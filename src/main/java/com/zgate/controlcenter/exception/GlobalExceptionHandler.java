@@ -37,7 +37,11 @@ import java.util.stream.Collectors;
  */
 @RestControllerAdvice
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final com.zgate.controlcenter.service.AuditService audit;
+    private final com.zgate.controlcenter.security.ClientIpResolver clientIpResolver;
 
     public record ErrorResponse(int status, String code, String message,
                                 Map<String, String> fieldErrors, LocalDateTime timestamp) {
@@ -60,13 +64,43 @@ public class GlobalExceptionHandler {
         return respond(status, ex.getCode(), ex.getMessage());
     }
 
-    @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException ex) {
+    /**
+     * Every sign-in failure the authentication manager can raise — wrong password, disabled
+     * account, locked account — is the same 401 to the caller. Only {@code BadCredentialsException}
+     * was mapped before, so a disabled operator's sign-in surfaced as a 500 and told them their
+     * account state in the process.
+     */
+    @ExceptionHandler({BadCredentialsException.class,
+                       org.springframework.security.core.AuthenticationException.class})
+    public ResponseEntity<ErrorResponse> handleBadCredentials(
+            org.springframework.security.core.AuthenticationException ex) {
         return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid email or password");
     }
 
+    /**
+     * A signed-in operator calling an endpoint above their role. Audited: an ADMIN probing the
+     * super-admin-only endpoints is exactly the kind of thing the activity monitor exists to show,
+     * and method security refuses it before any controller-level audit could run.
+     */
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResponse> handleAccess(AccessDeniedException ex) {
+    public ResponseEntity<ErrorResponse> handleAccess(AccessDeniedException ex,
+                                                      jakarta.servlet.http.HttpServletRequest http) {
+        try {
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()
+                    && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+                String actor = com.zgate.controlcenter.service.IdentityEvents.safeActor(auth.getName());
+                String roles = auth.getAuthorities().stream().map(Object::toString)
+                    .collect(Collectors.joining(","));
+                String endpoint = http.getMethod() + " " + http.getRequestURI();
+                audit.log(actor, actor, com.zgate.controlcenter.service.IdentityEvents.ACCESS_DENIED, "Endpoint",
+                          endpoint.length() > 100 ? endpoint.substring(0, 100) : endpoint, null,
+                          clientIpResolver.resolve(http), "role=" + roles,
+                          com.zgate.controlcenter.domain.AuditLog.Status.FAILURE);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not audit an access denial: {}", e.toString());
+        }
         return respond(HttpStatus.FORBIDDEN, "ACCESS_DENIED",
             "You don't have permission to perform this action");
     }
@@ -122,6 +156,40 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMissingParam(MissingServletRequestParameterException ex) {
         return respond(HttpStatus.BAD_REQUEST, "MISSING_PARAMETER",
             "Required parameter '" + ex.getParameterName() + "' is missing");
+    }
+
+    /** A required header (the M2M org header, mostly) left out — a client mistake, so 400 not 500. */
+    @ExceptionHandler(org.springframework.web.bind.MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingHeader(org.springframework.web.bind.MissingRequestHeaderException ex) {
+        return respond(HttpStatus.BAD_REQUEST, "MISSING_HEADER",
+            "Required header '" + ex.getHeaderName() + "' is missing");
+    }
+
+    /**
+     * A database constraint caught what no validation did: a duplicate key (409), a missing
+     * NOT NULL column or a dangling reference (400). Several controllers still persist raw
+     * entities, so without this every such mistake surfaced as a 500 with the SQL in the log.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
+        String sqlState = null;
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql) { sqlState = sql.getSQLState(); break; }
+        }
+        if ("23505".equals(sqlState)) {
+            return respond(HttpStatus.CONFLICT, "DUPLICATE",
+                "A record with the same unique value already exists");
+        }
+        if ("23502".equals(sqlState)) {
+            return respond(HttpStatus.BAD_REQUEST, "MISSING_FIELD",
+                "A required field is missing");
+        }
+        if ("23503".equals(sqlState)) {
+            return respond(HttpStatus.BAD_REQUEST, "INVALID_REFERENCE",
+                "The request refers to a record that does not exist or is still referenced");
+        }
+        log.warn("Data integrity violation (SQLSTATE {}): {}", sqlState, ex.getMostSpecificCause().getMessage());
+        return respond(HttpStatus.BAD_REQUEST, "DATA_INTEGRITY", "The request violates a data constraint");
     }
 
     @ExceptionHandler(Exception.class)

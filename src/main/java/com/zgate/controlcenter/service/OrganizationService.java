@@ -11,6 +11,8 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.List;
@@ -187,7 +189,15 @@ public class OrganizationService {
         org.setSubscriptionMonthlyFee(req.getSubscriptionMonthlyFee());
         if (req.getMaintenanceTimezone() != null && !req.getMaintenanceTimezone().isBlank()) {
             // Fail loudly at write time — a typo'd zone silently failing open at apply time is worse.
-            java.time.ZoneId.of(req.getMaintenanceTimezone());
+            // As a 400 naming the field, not the 500 an unguarded ZoneId.of used to produce.
+            try {
+                java.time.ZoneId.of(req.getMaintenanceTimezone());
+            } catch (java.time.DateTimeException e) {
+                // (HttpStatus via valueOf: the local variable `org` shadows the package name here.)
+                throw new ControlCenterException(
+                    "maintenanceTimezone '" + req.getMaintenanceTimezone() + "' is not a valid IANA time zone (e.g. Africa/Lagos)",
+                    "VALIDATION_ERROR", BAD_REQUEST);
+            }
         }
         org.setMaintenanceWindowStart(req.getMaintenanceWindowStart());
         org.setMaintenanceWindowEnd(req.getMaintenanceWindowEnd());

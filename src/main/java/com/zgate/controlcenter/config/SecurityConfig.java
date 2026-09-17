@@ -54,6 +54,17 @@ public class SecurityConfig {
             .cors(org.springframework.security.config.Customizer.withDefaults())
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // An unauthenticated call to a protected route is 401, not the default bodiless 403.
+            // The console signs the operator out on 401; on 403 it just shows "forbidden" — so a
+            // revoked or expired token used to leave the victim staring at errors instead of the
+            // sign-in page, which made "revoke sessions" look broken even though it worked.
+            .exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> {
+                response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.getWriter().write(
+                    "{\"status\":401,\"code\":\"UNAUTHORIZED\",\"message\":\"Sign in to continue.\","
+                    + "\"fieldErrors\":null,\"timestamp\":\"" + java.time.LocalDateTime.now() + "\"}");
+            }))
             .authorizeHttpRequests(auth -> auth
                 // Step-up must come BEFORE the /auth/** permitAll: it re-authenticates an
                 // ALREADY signed-in operator, so an anonymous caller has no principal to prove.

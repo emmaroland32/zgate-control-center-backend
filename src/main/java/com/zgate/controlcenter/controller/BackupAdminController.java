@@ -58,7 +58,8 @@ public class BackupAdminController {
     /** Create or update an org's backup subscription (quota, retention, pricing, paid-through). */
     @PutMapping("/org/{orgId}/plan")
     @ResponseMessage(code = "BACKUP_PLAN_UPDATED", value = "Backup plan updated")
-    public ResponseEntity<BackupPlan> upsertPlan(@PathVariable UUID orgId, @RequestBody BackupPlan plan) {
+    public ResponseEntity<BackupPlan> upsertPlan(@PathVariable UUID orgId,
+                                                 @RequestBody com.zgate.controlcenter.service.BackupService.PlanUpdate plan) {
         return ResponseEntity.ok(backupService.upsertPlan(orgId, plan));
     }
 

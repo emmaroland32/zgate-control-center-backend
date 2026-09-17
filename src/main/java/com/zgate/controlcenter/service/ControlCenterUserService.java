@@ -95,14 +95,102 @@ public class ControlCenterUserService {
             "ipAllowlistEntries", ipAllowlistEntryCount);
     }
 
-    public List<ControlCenterUser> findAll() { return repo.findAll(); }
+    // ── Views ───────────────────────────────────────────────────────────────
+
+    /**
+     * An operator as the console shows it: everything except secrets, plus the derived lock state
+     * (the entity hides {@code lockedUntil}/{@code failedLoginAttempts} from JSON, so without this
+     * an administrator could not see WHY someone cannot sign in).
+     */
+    public record OperatorView(UUID id, String name, String email, ControlCenterUser.Role role,
+                               boolean active, boolean mfaEnabled, boolean ssoLinked,
+                               boolean locked, LocalDateTime lockedUntil, int failedLoginAttempts,
+                               LocalDateTime lastLoginAt, LocalDateTime createdAt) {}
+
+    public static OperatorView toView(ControlCenterUser u) {
+        boolean locked = u.getLockedUntil() != null && u.getLockedUntil().isAfter(LocalDateTime.now());
+        return new OperatorView(u.getId(), u.getName(), u.getEmail(), u.getRole(), u.isActive(),
+            u.isMfaEnabled(), u.getOidcSubject() != null && !u.getOidcSubject().isBlank(),
+            locked, locked ? u.getLockedUntil() : null, u.getFailedLoginAttempts(),
+            u.getLastLoginAt(), u.getCreatedAt());
+    }
+
+    public List<OperatorView> listOperators() {
+        return repo.findAll().stream().map(ControlCenterUserService::toView).toList();
+    }
+
+    public OperatorView view(UUID id) { return toView(findById(id)); }
+
+    public OperatorView viewByEmail(String email) {
+        return toView(repo.findByEmailIgnoreCase(email)
+            .orElseThrow(() -> new ControlCenterException("User not found: " + email)));
+    }
 
     public ControlCenterUser findById(UUID id) {
         return repo.findById(id).orElseThrow(() -> new ControlCenterException("User not found: " + id));
     }
 
-    public ControlCenterUser create(CreateUserRequest req) {
-        if (repo.existsByEmail(req.getEmail())) {
+    // ── Privilege rules ─────────────────────────────────────────────────────
+
+    /** Error code for a management call refused by the rules below (HTTP 403). */
+    public static final String PRIVILEGE_CODE = "OPERATOR_PRIVILEGE";
+
+    private ControlCenterUser actor(String actorEmail) {
+        return repo.findByEmailIgnoreCase(actorEmail == null ? "" : actorEmail)
+            .filter(ControlCenterUser::isActive)
+            .orElseThrow(() -> refused("Your operator account could not be resolved."));
+    }
+
+    private static ControlCenterException refused(String why) {
+        return new ControlCenterException(why, PRIVILEGE_CODE, org.springframework.http.HttpStatus.FORBIDDEN);
+    }
+
+    private static boolean isSuper(ControlCenterUser u) {
+        return u.getRole() == ControlCenterUser.Role.SUPER_ADMIN;
+    }
+
+    /**
+     * An ADMIN may never reach a SUPER_ADMIN account. Without this rule the ADMIN role is
+     * SUPER_ADMIN in all but name: rewrite a super-admin's password, sign in as them, done.
+     */
+    private static ControlCenterUser requireMayManage(ControlCenterUser actor, ControlCenterUser target) {
+        if (isSuper(target) && !isSuper(actor)) {
+            throw refused("Only a super-admin can manage a super-admin account.");
+        }
+        return target;
+    }
+
+    private static void requireMayAssignRole(ControlCenterUser actor, ControlCenterUser.Role role) {
+        if (role == ControlCenterUser.Role.SUPER_ADMIN && !isSuper(actor)) {
+            throw refused("Only a super-admin can grant the super-admin role.");
+        }
+    }
+
+    private static void requireNotSelf(ControlCenterUser actor, ControlCenterUser target, String what) {
+        if (actor.getId() != null && actor.getId().equals(target.getId())) {
+            throw refused("You cannot " + what + " your own account.");
+        }
+    }
+
+    /**
+     * Removing the last active super-admin leaves nobody able to manage operators at all.
+     * Callers run inside a transaction; the roster lock serialises concurrent demotions so the
+     * count cannot be stale (see {@code lockOperatorRoster}).
+     */
+    private void requireNotLastSuperAdmin(ControlCenterUser target, String what) {
+        if (!isSuper(target) || !target.isActive()) return;
+        repo.lockOperatorRoster();
+        if (repo.countByRoleAndActiveTrue(ControlCenterUser.Role.SUPER_ADMIN) <= 1) {
+            throw refused("Cannot " + what + " the last active super-admin.");
+        }
+    }
+
+    // ── Account lifecycle ───────────────────────────────────────────────────
+
+    public ControlCenterUser create(String actorEmail, CreateUserRequest req) {
+        ControlCenterUser actor = actor(actorEmail);
+        requireMayAssignRole(actor, req.getRole());
+        if (repo.existsByEmail(req.getEmail()) || repo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {
             throw new ControlCenterException("Email already in use: " + req.getEmail());
         }
         requirePasswordPolicy(req.getPassword());
@@ -115,28 +203,117 @@ public class ControlCenterUserService {
             .build());
     }
 
-    public ControlCenterUser update(UUID id, CreateUserRequest req) {
-        ControlCenterUser user = findById(id);
-        if (req.getName() != null && !req.getName().isBlank()) {
+    /** The saved user plus a human-readable diff for the audit row. */
+    public record UpdateResult(ControlCenterUser user, String changes) {}
+
+    /**
+     * Name and role only. A password in the body is refused rather than ignored — the old
+     * behaviour let any ADMIN rewrite any password through this endpoint with no step-up.
+     * Email is the sign-in identity and the SSO link; it is not editable.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public UpdateResult update(String actorEmail, UUID id, CreateUserRequest req) {
+        ControlCenterUser actor = actor(actorEmail);
+        ControlCenterUser user = requireMayManage(actor, findById(id));
+        if (req.getPassword() != null && !req.getPassword().isBlank()) {
+            throw new ControlCenterException(
+                "Passwords are changed with the reset-password action, not by editing the account.",
+                "VALIDATION_ERROR", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
+        if (req.getEmail() != null && !req.getEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ControlCenterException(
+                "An operator's email address cannot be changed; create a new account instead.",
+                "VALIDATION_ERROR", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
+        List<String> changes = new java.util.ArrayList<>();
+        if (req.getName() != null && !req.getName().isBlank() && !req.getName().equals(user.getName())) {
+            changes.add("name: '" + user.getName() + "' -> '" + req.getName() + "'");
             user.setName(req.getName());
         }
-        // A role change or password reset invalidates outstanding tokens: the JWT carries the OLD
-        // role claim, so without this a demoted operator keeps their previous authority until
-        // expiry, and a reset password leaves the attacker's session alive.
-        boolean securityRelevantChange = false;
+        // A role change invalidates outstanding tokens: the JWT carries the OLD role claim, so
+        // without this a demoted operator keeps their previous authority until expiry.
         if (req.getRole() != null && req.getRole() != user.getRole()) {
+            requireNotSelf(actor, user, "change the role of");
+            requireMayAssignRole(actor, req.getRole());
+            requireNotLastSuperAdmin(user, "demote");
+            changes.add("role: " + user.getRole() + " -> " + req.getRole());
             user.setRole(req.getRole());
-            securityRelevantChange = true;
-        }
-        if (req.getPassword() != null && !req.getPassword().isBlank()) {
-            requirePasswordPolicy(req.getPassword());
-            user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
-            securityRelevantChange = true;
-        }
-        if (securityRelevantChange) {
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
-        return repo.save(user);
+        return new UpdateResult(repo.save(user), changes.isEmpty() ? "no changes" : String.join("; ", changes));
+    }
+
+    /** Reinstate a disabled operator. Old sessions stay revoked; they sign in afresh. */
+    public void enable(String actorEmail, UUID id) {
+        ControlCenterUser user = requireMayManage(actor(actorEmail), findById(id));
+        if (user.isActive()) return;
+        user.setActive(true);
+        repo.save(user);
+    }
+
+    /**
+     * Clear a sign-in lockout early. The password itself is untouched. Never on yourself: a stolen
+     * session could otherwise guess the password through step-up, unlock itself, and repeat —
+     * turning the lockout into a 10-a-minute password oracle.
+     */
+    public void unlock(String actorEmail, UUID id) {
+        ControlCenterUser actor = actor(actorEmail);
+        ControlCenterUser user = requireMayManage(actor, findById(id));
+        requireNotSelf(actor, user, "clear the lockout on");
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        repo.save(user);
+    }
+
+    /**
+     * An operator rotating their OWN credential. Proves the current password and, when enabled,
+     * the second factor — a wrong guess at either counts toward the lockout, or this is a
+     * password oracle for a stolen session. Every session of theirs (this one included) dies;
+     * they sign in again with the new password.
+     */
+    public void changeOwnPassword(String email, String currentPassword, String mfaCode, String newPassword) {
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email == null ? "" : email)
+            .orElseThrow(() -> new ControlCenterException("User not found: " + email));
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            recordFailedLogin(user.getEmail());
+            throw new ControlCenterException("The current password is incorrect.",
+                "INVALID_CREDENTIALS", org.springframework.http.HttpStatus.UNAUTHORIZED);
+        }
+        try {
+            requireMfaIfEnabled(user.getEmail(), mfaCode);
+        } catch (ControlCenterException e) {
+            if ("MFA_INVALID".equals(e.getCode())) recordFailedLogin(user.getEmail());
+            throw e;
+        }
+        requirePasswordPolicy(newPassword);
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new ControlCenterException("The new password must differ from the current one.",
+                "PASSWORD_POLICY", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        repo.save(user);
+    }
+
+    /**
+     * Set a new password for someone else. Policy-checked, must differ from the current one,
+     * kills every outstanding session of the target and clears any lockout so the new password
+     * works immediately. Step-up is enforced at the controller.
+     */
+    public void resetPassword(String actorEmail, UUID id, String newPassword) {
+        ControlCenterUser user = requireMayManage(actor(actorEmail), findById(id));
+        requirePasswordPolicy(newPassword);
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new ControlCenterException("The new password must differ from the current one.",
+                "PASSWORD_POLICY", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        repo.save(user);
     }
 
     /**
@@ -144,8 +321,12 @@ public class ControlCenterUserService {
      * bearer-token path never re-checked {@code active}, so a fired or compromised operator kept
      * full access until their token expired (24h by default).
      */
-    public void disable(UUID id) {
-        ControlCenterUser user = findById(id);
+    @org.springframework.transaction.annotation.Transactional
+    public void disable(String actorEmail, UUID id) {
+        ControlCenterUser actor = actor(actorEmail);
+        ControlCenterUser user = requireMayManage(actor, findById(id));
+        requireNotSelf(actor, user, "disable");
+        requireNotLastSuperAdmin(user, "disable");
         user.setActive(false);
         user.setTokenVersion(user.getTokenVersion() + 1);
         repo.save(user);
@@ -156,15 +337,15 @@ public class ControlCenterUserService {
      * filter's version check immediately. (The old implementation only nulled lastLoginAt, which
      * revoked nothing — tokens stayed valid until natural expiry.)
      */
-    public void revokeSessions(UUID id) {
-        ControlCenterUser user = findById(id);
+    public void revokeSessions(String actorEmail, UUID id) {
+        ControlCenterUser user = requireMayManage(actor(actorEmail), findById(id));
         user.setTokenVersion(user.getTokenVersion() + 1);
         user.setLastLoginAt(null);
         repo.save(user);
     }
 
     public int tokenVersionOf(String email) {
-        return repo.findByEmail(email).map(ControlCenterUser::getTokenVersion).orElse(0);
+        return repo.findByEmailIgnoreCase(email).map(ControlCenterUser::getTokenVersion).orElse(0);
     }
 
     /**
@@ -173,7 +354,7 @@ public class ControlCenterUserService {
      * without that, an observed code stays replayable for up to 90 seconds.
      */
     public void requireMfaIfEnabled(String email, String mfaCode) {
-        ControlCenterUser user = repo.findByEmail(email).orElse(null);
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email).orElse(null);
         if (user == null || !user.isMfaEnabled()) return;
         if (mfaCode == null || mfaCode.isBlank()) {
             throw new com.zgate.controlcenter.exception.ControlCenterException(
@@ -199,13 +380,16 @@ public class ControlCenterUserService {
      * request. Re-enrolling while MFA is already on additionally requires a current code.
      */
     public java.util.Map<String, String> mfaEnroll(String email, String currentCode) {
-        ControlCenterUser user = repo.findByEmail(email).orElseThrow(() ->
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email).orElseThrow(() ->
             new com.zgate.controlcenter.exception.ControlCenterException("User not found"));
 
         if (user.isMfaEnabled()) {
             Long step = totp.matchedStep(readSecret(user.getMfaSecret(), user.getMfaKeyId()),
                 currentCode == null ? "" : currentCode.trim(), user.getMfaLastStep());
             if (step == null) {
+                // A wrong code here is a second-factor guess like any other: count it toward the
+                // lockout, or a stolen session could brute-force its way to replacing the factor.
+                recordFailedLogin(user.getEmail());
                 throw new com.zgate.controlcenter.exception.ControlCenterException(
                     "Re-enrolling requires a current code from the authenticator you are replacing. "
                   + "If you have lost it, ask a super-admin to reset your two-factor authentication.",
@@ -230,7 +414,7 @@ public class ControlCenterUserService {
 
     /** Finish enrollment: a valid code proves the app holds the staged secret; it then goes live. */
     public void mfaActivate(String email, String code) {
-        ControlCenterUser user = repo.findByEmail(email).orElseThrow(() ->
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email).orElseThrow(() ->
             new com.zgate.controlcenter.exception.ControlCenterException("User not found"));
         if (user.getMfaPendingSecret() == null) {
             throw new com.zgate.controlcenter.exception.ControlCenterException(
@@ -319,7 +503,7 @@ public class ControlCenterUserService {
      * changing it out of band.
      */
     public void requireNotDefaultPassword(String email) {
-        repo.findByEmail(email).ifPresent(user -> {
+        repo.findByEmailIgnoreCase(email).ifPresent(user -> {
             if (DEFAULT_ADMIN_HASH.equals(user.getPasswordHash())) {
                 log.warn("Refused sign-in for {} — account still uses the shipped default password. "
                         + "Set CONTROLCENTER_ADMIN_PASSWORD or change it out of band.", email);
@@ -339,7 +523,7 @@ public class ControlCenterUserService {
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void bootstrapDefaultAdmin() {
         if (bootstrapAdminPassword == null || bootstrapAdminPassword.isBlank()) return;
-        repo.findByEmail("admin@zgate.com").ifPresent(user -> {
+        repo.findByEmailIgnoreCase("admin@zgate.com").ifPresent(user -> {
             if (!DEFAULT_ADMIN_HASH.equals(user.getPasswordHash())) return; // already rotated — leave it
             try {
                 requirePasswordPolicy(bootstrapAdminPassword);
@@ -361,11 +545,14 @@ public class ControlCenterUserService {
 
     /** Refuse a login attempt while the account is locked out. Called before password auth. */
     public void requireNotLockedOut(String email) {
-        ControlCenterUser user = repo.findByEmail(email).orElse(null);
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email).orElse(null);
         if (user == null || user.getLockedUntil() == null) return;
         if (user.getLockedUntil().isAfter(LocalDateTime.now())) {
+            // Coarse, not the exact deadline: the precise timestamp told an attacker exactly when
+            // to resume, and confirmed the account exists more loudly than it needed to.
+            long minutes = Math.max(1, java.time.Duration.between(LocalDateTime.now(), user.getLockedUntil()).toMinutes() + 1);
             throw new com.zgate.controlcenter.exception.ControlCenterException(
-                "Too many failed sign-in attempts. Try again after " + user.getLockedUntil() + ".",
+                "Too many failed sign-in attempts. Try again in about " + minutes + " minute" + (minutes == 1 ? "" : "s") + ".",
                 "ACCOUNT_LOCKED", org.springframework.http.HttpStatus.TOO_MANY_REQUESTS);
         }
     }
@@ -375,23 +562,26 @@ public class ControlCenterUserService {
      * exponential backoff once the threshold is passed. Without this the second factor is
      * brute-forceable: the ±1 window makes 3 of a million codes live at any instant.
      */
-    public void recordFailedLogin(String email) {
-        repo.findByEmail(email).ifPresent(user -> {
-            int attempts = user.getFailedLoginAttempts() + 1;
-            user.setFailedLoginAttempts(attempts);
-            if (attempts >= lockoutThreshold) {
-                long minutes = Math.min(lockoutMaxMinutes,
-                    (long) lockoutBaseMinutes << Math.min(10, attempts - lockoutThreshold));
-                user.setLockedUntil(LocalDateTime.now().plusMinutes(minutes));
-                log.warn("Operator {} locked out for {} min after {} failed sign-in attempts",
-                         email, minutes, attempts);
-            }
-            repo.save(user);
-        });
+    public boolean recordFailedLogin(String email) {
+        ControlCenterUser user = repo.findByEmailIgnoreCase(email).orElse(null);
+        if (user == null) return false;
+        int attempts = user.getFailedLoginAttempts() + 1;
+        user.setFailedLoginAttempts(attempts);
+        boolean lockedNow = false;
+        if (attempts >= lockoutThreshold) {
+            long minutes = Math.min(lockoutMaxMinutes,
+                (long) lockoutBaseMinutes << Math.min(10, attempts - lockoutThreshold));
+            user.setLockedUntil(LocalDateTime.now().plusMinutes(minutes));
+            lockedNow = true;
+            log.warn("Operator {} locked out for {} min after {} failed sign-in attempts",
+                     email, minutes, attempts);
+        }
+        repo.save(user);
+        return lockedNow;
     }
 
     public void recordSuccessfulLogin(String email) {
-        repo.findByEmail(email).ifPresent(user -> {
+        repo.findByEmailIgnoreCase(email).ifPresent(user -> {
             if (user.getFailedLoginAttempts() != 0 || user.getLockedUntil() != null) {
                 user.setFailedLoginAttempts(0);
                 user.setLockedUntil(null);
@@ -401,8 +591,8 @@ public class ControlCenterUserService {
     }
 
     /** Break-glass for a lost authenticator. SUPER_ADMIN-gated at the controller. */
-    public void mfaDisable(UUID id) {
-        ControlCenterUser user = findById(id);
+    public void mfaDisable(String actorEmail, UUID id) {
+        ControlCenterUser user = requireMayManage(actor(actorEmail), findById(id));
         user.setMfaEnabled(false);
         user.setMfaSecret(null);
         user.setMfaPendingSecret(null);
@@ -414,7 +604,7 @@ public class ControlCenterUserService {
     }
 
     public void recordLogin(String email) {
-        repo.findByEmail(email).ifPresent(u -> {
+        repo.findByEmailIgnoreCase(email).ifPresent(u -> {
             u.setLastLoginAt(LocalDateTime.now());
             repo.save(u);
         });

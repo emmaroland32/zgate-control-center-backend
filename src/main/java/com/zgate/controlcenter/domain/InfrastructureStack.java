@@ -39,7 +39,10 @@ public class InfrastructureStack {
     @Column(nullable = false, length = 16)
     private String environment;   // dev | staging | prod
 
-    @Enumerated(EnumType.STRING)
+    // Stored as the slug ("aws-ecs"), which is what ck_infra_stack_target admits. This was
+    // @Enumerated(STRING) — the enum NAME — so every insert of a stack row failed the check
+    // constraint and provisioning could never persist a stack.
+    @Convert(converter = TargetConverter.class)
     @Column(nullable = false, length = 32)
     private Target target;
 
@@ -96,6 +99,13 @@ public class InfrastructureStack {
 
     @PrePersist void prePersist() { createdAt = LocalDateTime.now(); updatedAt = createdAt; }
     @PreUpdate  void preUpdate()  { updatedAt = LocalDateTime.now(); }
+
+    /** Maps {@link Target} to its slug in the {@code target} column and back. */
+    @Converter
+    public static class TargetConverter implements AttributeConverter<Target, String> {
+        @Override public String convertToDatabaseColumn(Target t) { return t == null ? null : t.slug(); }
+        @Override public Target convertToEntityAttribute(String s) { return s == null ? null : Target.fromSlug(s); }
+    }
 
     public enum Target {
         AWS_ECS("aws-ecs"),

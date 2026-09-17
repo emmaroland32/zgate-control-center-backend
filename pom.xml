@@ -159,6 +159,23 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Integration tests boot the full context against a throwaway Postgres in Docker
+             (AdminManagementIntegrationTest). Versions come from the Boot BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Distributed scheduled-job locking: lets a second Control Center replica run without
              double-invoicing, double-renewing licenses, or double-advancing rollouts. -->
         <dependency>

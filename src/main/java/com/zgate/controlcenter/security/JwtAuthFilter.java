@@ -33,7 +33,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             // A token whose version no longer matches the user's has been revoked — a signature
             // check alone would happily accept it until expiry, which is what made the old
             // "revoke sessions" a fiction.
-            boolean revoked = userRepo.findByEmail(email)
+            boolean revoked = userRepo.findByEmailIgnoreCase(email)
                 .map(u -> u.getTokenVersion() != jwtUtils.getTokenVersion(token))
                 .orElse(true);
             if (!revoked) {

@@ -17,13 +17,16 @@ public class Partner {
     @Id @UuidGenerator
     private UUID id;
 
+    @jakarta.validation.constraints.NotBlank
     @Column(nullable = false)
     private String companyName;
 
+    @jakarta.validation.constraints.NotNull
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Tier tier;
 
+    @jakarta.validation.constraints.NotNull
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Status status;

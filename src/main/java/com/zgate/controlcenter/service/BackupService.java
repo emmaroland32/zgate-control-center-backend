@@ -185,21 +185,40 @@ public class BackupService {
 
     /** Create or update an org's backup plan (admin). */
     @Transactional
-    public BackupPlan upsertPlan(UUID orgId, BackupPlan incoming) {
+    /**
+     * What a plan update may carry. Every field is optional: absent means "leave as is" (or the
+     * entity default for a brand-new plan). The request used to be the {@code BackupPlan} entity
+     * itself, whose {@code @Builder.Default} prices deserialise to ZERO when omitted — so a PUT that
+     * only touched the quota silently wiped the customer's pricing.
+     */
+    public record PlanUpdate(Boolean enabled, Integer storageQuotaGb, Integer retentionDays,
+                             Integer maxRetainedBackups, java.math.BigDecimal pricePerMonth,
+                             java.math.BigDecimal pricePerGbMonth, String currency,
+                             java.time.LocalDateTime subscriptionValidUntil) {}
+
+    public BackupPlan upsertPlan(UUID orgId, PlanUpdate incoming) {
         BackupPlan plan = planRepo.findByOrganizationId(orgId).orElseGet(() -> {
             BackupPlan p = new BackupPlan();
             p.setOrganizationId(orgId);
             return p;
         });
-        plan.setEnabled(incoming.isEnabled());
-        plan.setStorageQuotaGb(Math.max(0, incoming.getStorageQuotaGb()));
-        plan.setRetentionDays(Math.max(1, incoming.getRetentionDays()));
-        plan.setMaxRetainedBackups(incoming.getMaxRetainedBackups());
-        if (incoming.getPricePerMonth() != null) plan.setPricePerMonth(incoming.getPricePerMonth());
-        if (incoming.getPricePerGbMonth() != null) plan.setPricePerGbMonth(incoming.getPricePerGbMonth());
-        if (incoming.getCurrency() != null && !incoming.getCurrency().isBlank()) plan.setCurrency(incoming.getCurrency());
-        plan.setSubscriptionValidUntil(incoming.getSubscriptionValidUntil());
+        if (incoming.enabled() != null) plan.setEnabled(incoming.enabled());
+        if (incoming.storageQuotaGb() != null) plan.setStorageQuotaGb(Math.max(0, incoming.storageQuotaGb()));
+        if (incoming.retentionDays() != null) plan.setRetentionDays(Math.max(1, incoming.retentionDays()));
+        // null is a meaningful value for these two (unlimited / until cancelled), so they always apply.
+        plan.setMaxRetainedBackups(incoming.maxRetainedBackups());
+        plan.setSubscriptionValidUntil(incoming.subscriptionValidUntil());
+        if (incoming.pricePerMonth() != null) plan.setPricePerMonth(incoming.pricePerMonth());
+        if (incoming.pricePerGbMonth() != null) plan.setPricePerGbMonth(incoming.pricePerGbMonth());
+        if (incoming.currency() != null && !incoming.currency().isBlank()) plan.setCurrency(incoming.currency());
         return planRepo.save(plan);
+    }
+
+    /** Entity-shaped update: every field is taken as given. Kept for callers that build a full plan. */
+    public BackupPlan upsertPlan(UUID orgId, BackupPlan incoming) {
+        return upsertPlan(orgId, new PlanUpdate(incoming.isEnabled(), incoming.getStorageQuotaGb(),
+            incoming.getRetentionDays(), incoming.getMaxRetainedBackups(), incoming.getPricePerMonth(),
+            incoming.getPricePerGbMonth(), incoming.getCurrency(), incoming.getSubscriptionValidUntil()));
     }
 
     /** Current usage + the metered monthly charge (base + stored GiB × per-GiB rate). */

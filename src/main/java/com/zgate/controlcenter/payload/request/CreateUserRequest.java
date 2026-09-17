@@ -8,8 +8,8 @@ import lombok.Data;
 
 @Data
 public class CreateUserRequest {
-    @NotBlank private String name;
-    @Email @NotBlank private String email;
+    @NotBlank @jakarta.validation.constraints.Size(max = 200) private String name;
+    @Email @NotBlank @jakarta.validation.constraints.Size(max = 100) private String email;
     private String password;
     @NotNull private ControlCenterUser.Role role;
 }

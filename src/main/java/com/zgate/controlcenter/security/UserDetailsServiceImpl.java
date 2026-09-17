@@ -16,7 +16,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        return userRepository.findByEmail(email)
+        // Case-insensitive, like every other operator lookup (V34 makes LOWER(email) unique).
+        return userRepository.findByEmailIgnoreCase(email)
             .map(u -> new User(
                 u.getEmail(),
                 u.getPasswordHash(),

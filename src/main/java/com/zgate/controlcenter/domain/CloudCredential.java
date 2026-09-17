@@ -76,10 +76,12 @@ public class CloudCredential {
      * AES-GCM ciphertext (base64) of the mode-specific secret: the AWS secret access key, the Azure
      * client secret, or the whole GCP service-account JSON. Null for {@code AWS_ASSUME_ROLE}.
      */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(columnDefinition = "TEXT")
     private String secretCiphertext;
 
     /** Key id that produced {@link #secretCiphertext}. An unknown id must throw, never guess. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(length = 64)
     private String secretKeyId;
 
